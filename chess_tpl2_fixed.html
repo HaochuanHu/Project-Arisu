@@ -1,0 +1,3318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Chess — Sakayanagi Arisu</title>
+<style>
+:root {
+  --light-sq: #f0d9b5;
+  --dark-sq:  #b58863;
+  --bg:       #12111a;
+  --panel:    #1a1826;
+  --border:   #2e2b45;
+  --text:     #e2dff5;
+  --muted:    #6b6785;
+  --accent:   #b09be8;
+  --sq: 68px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg);
+  display: flex; justify-content: center; align-items: center;
+  min-height: 100vh;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  color: var(--text); padding: 20px;
+}
+#app { display: flex; gap: 18px; align-items: flex-start; }
+
+/* board column */
+#board-col { display: flex; flex-direction: column; align-items: flex-start; }
+#board-row  { display: flex; align-items: stretch; }
+
+/* eval bar */
+#eval-wrap {
+  width: 14px;
+  height: calc(8 * var(--sq));
+  display: flex; flex-direction: column;
+  border: 1px solid var(--border); border-radius: 3px;
+  overflow: hidden; margin-right: 4px; flex-shrink: 0;
+}
+/* When the board is flipped (player at the bottom is black) the eval bar
+   mirrors so that the bottom-side colour matches whoever is on the bottom
+   of the board. Pure CSS — the flex values themselves don't change. */
+#eval-wrap.flipped { flex-direction: column-reverse; }
+#eval-black { background: #1c1c1c; transition: flex 0.5s ease; flex: 50; }
+#eval-white { background: #efefef; transition: flex 0.5s ease; flex: 50; }
+#eval-score {
+  text-align: center; font-size: 10px; font-weight: 800;
+  color: var(--muted); margin-top: 3px; width: 14px; letter-spacing: -0.5px;
+}
+
+/* ranks */
+#ranks { display: flex; flex-direction: column; }
+.rank-label {
+  height: var(--sq); width: 18px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px; color: var(--muted); font-weight: 700;
+}
+
+/* board */
+#board {
+  display: grid;
+  grid-template-columns: repeat(8, var(--sq));
+  grid-template-rows:    repeat(8, var(--sq));
+  border: 2px solid var(--border); border-radius: 2px; overflow: hidden;
+  position: relative;            /* anchor for the SVG arrow overlay */
+  touch-action: none;            /* lets us own touch events without browser scroll */
+}
+#arrow-layer {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 6;
+  overflow: visible;
+}
+
+#files-row { display: flex; padding-left: calc(18px + 14px + 4px); }
+.file-label {
+  width: var(--sq); text-align: center;
+  font-size: 11px; color: var(--muted); font-weight: 700; margin-top: 3px;
+}
+
+.square {
+  width: var(--sq); height: var(--sq);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 44px; cursor: pointer; position: relative; user-select: none;
+}
+.square:hover { filter: brightness(1.08); }
+.light { background: var(--light-sq); }
+.dark  { background: var(--dark-sq); }
+.sq-sel  { background: #6fbe6f !important; }
+.sq-last { background: rgba(155,199,0,0.36) !important; }
+.sq-chk  { background: rgba(210,50,50,0.55) !important; }
+.sq-dot::after {
+  content:''; position:absolute; width:30%; height:30%;
+  background:rgba(0,0,0,0.2); border-radius:50%; pointer-events:none; z-index:2;
+}
+.sq-cap::after {
+  content:''; position:absolute; inset:0;
+  border:6px solid rgba(0,0,0,0.2); pointer-events:none; z-index:2;
+}
+.piece { position:relative; z-index:1; line-height:1; pointer-events:none; }
+.wp { color:#fff; text-shadow:0 0 3px #000,0 0 7px #000; }
+.bp { color:#111; text-shadow:0 0 3px rgba(255,255,255,0.15); }
+
+/* panel */
+#panel { width: 215px; display: flex; flex-direction: column; gap: 9px; }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 13px; }
+.lbl { font-size:9px; text-transform:uppercase; letter-spacing:1.5px; color:var(--muted); margin-bottom:7px; font-weight:800; }
+
+/* character card */
+#char-card {
+  background: linear-gradient(135deg,#1a1530,#1e1828,#1a1520);
+  border: 1px solid #3a2e5a; border-radius:12px; padding:13px 14px;
+  position:relative; overflow:hidden;
+}
+#char-card::before {
+  content:''; position:absolute; top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--accent),#e8a3c8,transparent);
+}
+#char-name { font-size:13px; font-weight:800; color:#d4c8f5; }
+#char-sub  { font-size:10px; color:var(--muted); margin-top:2px; }
+#char-div  { height:1px; background:var(--border); margin:9px 0; }
+#dlg-who   { font-size:9px; color:var(--accent); font-weight:800; letter-spacing:.5px; margin-bottom:4px; }
+#dlg {
+  font-size:12px; color:#c8c0e8; line-height:1.55;
+  min-height:48px; font-style:italic;
+  transition: opacity .28s;
+}
+#dlg.fade { opacity:0; }
+
+/* portrait */
+#portrait-area { text-align:center; margin-bottom:9px; }
+#portrait-area svg, #portrait-area img { width:100%; height:auto; display:block; border-radius:6px; }
+.p-state { display:none; }
+.p-state.p-active { display:block; }
+#portrait-area { transition:opacity .3s; }
+#portrait-area.p-fade { opacity:0; }
+
+/* resign button */
+#resign-btn { color:#e08080; border-color:#5a2a2a; }
+#resign-btn:hover { background:#2e1a1a; border-color:#884040; }
+
+/* status */
+#st-row { display:flex; align-items:center; gap:8px; }
+#turn-dot {
+  width:9px; height:9px; border-radius:50%;
+  border:2px solid #555; flex-shrink:0; transition:background .3s;
+}
+#turn-dot.white { background:#fff; border-color:#ccc; }
+#turn-dot.black { background:#222; border-color:#888; }
+#status { font-size:13px; font-weight:700; }
+#adv-bg { height:4px; background:#222; border-radius:2px; margin-top:9px; overflow:hidden; }
+#adv-fill { height:100%; width:50%; background:#fff; border-radius:2px; transition:width .5s; }
+#adv-lbl { font-size:10px; color:var(--muted); margin-top:3px; }
+
+/* captured */
+.cap-row { font-size:16px; min-height:20px; letter-spacing:-1px; }
+
+/* history */
+#move-list {
+  font-size:11.5px; font-family:Consolas,monospace;
+  max-height:160px; overflow-y:auto;
+  display:flex; flex-direction:column; gap:1px;
+}
+#move-list::-webkit-scrollbar { width:3px; }
+#move-list::-webkit-scrollbar-thumb { background:var(--border); border-radius:2px; }
+.mp { display:grid; grid-template-columns:22px 1fr 1fr; gap:2px; }
+.mn { color:var(--muted); }
+.ms { padding:2px 4px; border-radius:3px; color:var(--text); }
+.ms.cur { background:#2b2445; color:var(--accent); }
+
+/* buttons */
+#btn-row { display:flex; gap:8px; }
+button {
+  padding:7px 12px; border:1px solid var(--border);
+  background:#1f1d30; color:var(--text); border-radius:7px;
+  cursor:pointer; font-size:12px; font-weight:600; transition:background .15s;
+}
+button:hover { background:#2a2745; }
+select {
+  padding:7px 9px; background:#1f1d30; color:var(--text);
+  border:1px solid var(--border); border-radius:7px;
+  font-size:12px; cursor:pointer; font-weight:600;
+}
+
+/* promo */
+#promo-modal {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.78);
+  z-index:100; justify-content:center; align-items:center;
+}
+#promo-modal.show { display:flex; }
+#promo-box {
+  background:var(--panel); border:2px solid #3a2e5a;
+  border-radius:14px; padding:20px; text-align:center;
+}
+#promo-box h3 { margin-bottom:14px; font-size:15px; color:var(--accent); }
+#promo-pcs { display:flex; gap:10px; }
+.pb {
+  width:62px; height:62px; font-size:42px;
+  display:flex; align-items:center; justify-content:center;
+  border:2px solid var(--border); border-radius:10px;
+  cursor:pointer; background:#252240; transition:background .15s;
+}
+.pb:hover { background:#302d55; border-color:var(--accent); }
+
+/* game over */
+#gameover {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,.88);
+  z-index:50; justify-content:center; align-items:center;
+  flex-direction:column; gap:13px; text-align:center;
+}
+#gameover.show { display:flex; }
+#go-title { font-size:26px; color:#fff; font-weight:800; }
+#go-quote { font-size:13px; color:var(--accent); font-style:italic; max-width:330px; line-height:1.6; }
+#go-sub { font-size:13px; color:#888; }
+#gameover button { padding:9px 26px; font-size:14px; margin-top:4px; }
+
+/* ─── additions: animations, polish, hint, material diff ─── */
+
+/* piece slide animation — applied to a floating clone during move */
+.piece-fly {
+  position: absolute; pointer-events: none; z-index: 30;
+  font-size: 44px; line-height: 1;
+  transition: transform .22s cubic-bezier(.4,.0,.2,1);
+  will-change: transform;
+}
+
+/* pulse around the king when in check */
+@keyframes king-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 0 rgba(210,50,50,0); }
+  50%      { box-shadow: inset 0 0 18px 3px rgba(210,50,50,0.75); }
+}
+.sq-chk { animation: king-pulse 1.4s ease-in-out infinite; }
+
+/* checkmate — the losing king flashes */
+@keyframes mate-flash {
+  0%, 100% { background: rgba(210,50,50,0.60); }
+  50%      { background: rgba(255,120,120,0.90); }
+}
+.sq-mate { animation: mate-flash .7s ease-in-out infinite; background: rgba(210,50,50,0.60) !important; }
+
+/* hint highlight — pulsing outline on suggested from/to squares */
+@keyframes hint-pulse {
+  0%, 100% { box-shadow: inset 0 0 0 3px rgba(176,155,232,0.55); }
+  50%      { box-shadow: inset 0 0 0 5px rgba(176,155,232,0.95); }
+}
+.sq-hint { animation: hint-pulse 1.1s ease-in-out infinite; }
+
+/* material difference display */
+#mat-diff {
+  font-size: 10px; color: var(--muted);
+  margin-top: 6px; font-weight: 700; letter-spacing: 0.3px;
+}
+#mat-diff.adv-w { color: #cfe0a3; }
+#mat-diff.adv-b { color: #e89090; }
+
+/* mate-in-N eval */
+#eval-score.mate { color: #e89090; font-weight: 900; letter-spacing: 0; }
+
+/* secondary button row */
+#btn-row-2 { display: flex; gap: 8px; margin-top: 6px; }
+#btn-row-2 button { flex: 1; padding: 6px 8px; font-size: 11px; }
+#snd-btn { width: 36px; padding: 6px; flex: 0 0 auto; }
+#snd-btn.off { opacity: 0.45; }
+
+/* subtle fade on dialogue that also scales — feels more reactive */
+#dlg {
+  transform-origin: left top;
+  transition: opacity .28s, transform .28s;
+}
+#dlg.fade { opacity: 0; transform: translateY(-2px); }
+#dlg.sharp { color: #e8b8c8; }  /* used for taunts */
+
+/* portrait smoother crossfade */
+#portrait-area { transition: opacity .32s; }
+
+/* ─── drag-to-move ghost piece (follows the cursor) ─── */
+.piece-drag {
+  position: fixed;
+  pointer-events: none;
+  font-size: 64px;
+  line-height: 1;
+  z-index: 1000;
+  transform: translate(-50%, -55%);
+  user-select: none;
+  text-shadow: 0 2px 6px rgba(0,0,0,0.55);
+}
+.piece-drag.wp { color:#fff; text-shadow: 0 0 4px #000, 0 2px 8px rgba(0,0,0,.6); }
+.piece-drag.bp { color:#111; text-shadow: 0 0 4px rgba(255,255,255,.25), 0 2px 8px rgba(0,0,0,.6); }
+/* Highlight the square under the cursor while dragging. */
+.sq-drag-over {
+  box-shadow: inset 0 0 0 4px rgba(155,199,0,0.85);
+}
+
+/* ─── premove highlights (queued during opponent's turn) ─── */
+.sq-pre-from { background: rgba(255,140,140,0.50) !important; }
+.sq-pre-to   { background: rgba(255,140,140,0.50) !important;
+               box-shadow: inset 0 0 0 3px rgba(255,140,140,0.85); }
+/* Selected from-square while building a premove (no destination yet). */
+.sq-pre-sel  { background: rgba(255,180,180,0.65) !important; }
+/* Reachable squares for the selected piece during premove input. */
+.sq-pre-target::after {
+  content:''; position:absolute; inset:0;
+  box-shadow: inset 0 0 0 2px rgba(255,170,170,0.55);
+  pointer-events:none;
+}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- board side -->
+  <div id="board-col">
+    <div id="board-row">
+      <div style="display:flex;flex-direction:column;align-items:center">
+        <div id="eval-wrap">
+          <div id="eval-black"></div>
+          <div id="eval-white"></div>
+        </div>
+        <div id="eval-score">0.0</div>
+      </div>
+      <div id="ranks"></div>
+      <div id="board"></div>
+    </div>
+    <div id="files-row"></div>
+  </div>
+
+  <!-- panel -->
+  <div id="panel">
+    <div id="char-card">
+      <div id="portrait-area">
+        <!-- Horikita -->
+        <div id="p-horikita-calm" class="p-state">
+%%HORIKITA_CALM%%
+        </div>
+        <div id="p-horikita-frustrated" class="p-state">
+%%HORIKITA_FRUSTRATED%%
+        </div>
+        <!-- Arisu -->
+        <div id="p-arisu-calm" class="p-state p-active">
+%%CALM_B64%%
+        </div>
+        <div id="p-arisu-annoyed" class="p-state">
+%%ANNOYED_B64%%
+        </div>
+        <!-- Ayanokouji -->
+        <div id="p-ayano-calm" class="p-state">
+%%AYANO_CALM%%
+        </div>
+        <div id="p-ayano-intense" class="p-state">
+%%AYANO_INTENSE%%
+        </div>
+      </div>
+      <div id="char-name">Sakayanagi Arisu</div>
+      <div id="char-sub">Advanced Nurturing High · Class 1-A</div>
+      <div id="char-div"></div>
+      <div id="dlg-who">Sakayanagi</div>
+      <div id="dlg">…</div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">Status</div>
+      <div id="st-row">
+        <div id="turn-dot" class="white"></div>
+        <div id="status">White to move</div>
+      </div>
+      <div id="adv-bg"><div id="adv-fill"></div></div>
+      <div id="adv-lbl">Equal</div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">Captured</div>
+      <div class="cap-row" id="wcap"></div>
+      <div class="cap-row" id="bcap"></div>
+      <div id="mat-diff">Material: even</div>
+    </div>
+
+    <div class="card">
+      <div class="lbl">Move History</div>
+      <div id="move-list"></div>
+    </div>
+
+    <div id="btn-row">
+      <button id="new-btn">New Game</button>
+      <button id="resign-btn">Resign</button>
+      <select id="diff" title="Opponent">
+        <option value="2">Horikita</option>
+        <option value="4" selected>Sakayanagi</option>
+        <option value="5">Ayanokouji</option>
+      </select>
+    </div>
+    <div id="btn-row-2">
+      <button id="hint-btn" title="Show a suggested move">Hint</button>
+      <button id="undo-btn" title="Take back your last move">Undo</button>
+      <button id="flip-btn" title="Flip the board">Flip</button>
+      <button id="pgn-btn" title="Copy PGN to clipboard">PGN</button>
+      <button id="snd-btn" title="Toggle sound">&#128266;</button>
+    </div>
+  </div>
+</div>
+
+<!-- promotion modal -->
+<div id="promo-modal">
+  <div id="promo-box">
+    <h3>Promote pawn to:</h3>
+    <div id="promo-pcs"></div>
+  </div>
+</div>
+
+<!-- game over -->
+<div id="gameover">
+  <div id="go-title"></div>
+  <div id="go-quote"></div>
+  <div id="go-sub"></div>
+  <button id="go-new">Play Again</button>
+</div>
+
+<script id="eng">
+const _SYM = {K:'\u2654',Q:'\u2655',R:'\u2656',B:'\u2657',N:'\u2658',P:'\u2659',k:'\u265a',q:'\u265b',r:'\u265c',b:'\u265d',n:'\u265e',p:'\u265f'};
+const _VAL = {P:100,N:320,B:330,R:500,Q:900,K:20000};
+const _PST = {
+  P:[[0,0,0,0,0,0,0,0],[50,50,50,50,50,50,50,50],[10,10,20,30,30,20,10,10],[5,5,10,25,25,10,5,5],[0,0,0,20,20,0,0,0],[5,-5,-10,0,0,-10,-5,5],[5,10,10,-20,-20,10,10,5],[0,0,0,0,0,0,0,0]],
+  N:[[-50,-40,-30,-30,-30,-30,-40,-50],[-40,-20,0,0,0,0,-20,-40],[-30,0,10,15,15,10,0,-30],[-30,5,15,20,20,15,5,-30],[-30,0,15,20,20,15,0,-30],[-30,5,10,15,15,10,5,-30],[-40,-20,0,5,5,0,-20,-40],[-50,-40,-30,-30,-30,-30,-40,-50]],
+  B:[[-20,-10,-10,-10,-10,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,10,10,5,0,-10],[-10,5,5,10,10,5,5,-10],[-10,0,10,10,10,10,0,-10],[-10,10,10,10,10,10,10,-10],[-10,5,0,0,0,0,5,-10],[-20,-10,-10,-10,-10,-10,-10,-20]],
+  R:[[0,0,0,0,0,0,0,0],[5,10,10,10,10,10,10,5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[-5,0,0,0,0,0,0,-5],[0,0,0,5,5,0,0,0]],
+  Q:[[-20,-10,-10,-5,-5,-10,-10,-20],[-10,0,0,0,0,0,0,-10],[-10,0,5,5,5,5,0,-10],[-5,0,5,5,5,5,0,-5],[0,0,5,5,5,5,0,-5],[-10,5,5,5,5,5,0,-10],[-10,0,5,0,0,0,0,-10],[-20,-10,-10,-5,-5,-10,-10,-20]],
+  K:[[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-30,-40,-40,-50,-50,-40,-40,-30],[-20,-30,-30,-40,-40,-30,-30,-20],[-10,-20,-20,-20,-20,-20,-20,-10],[20,20,0,0,0,0,20,20],[20,30,10,0,0,10,30,20]]
+};
+const _INIT=[['r','n','b','q','k','b','n','r'],['p','p','p','p','p','p','p','p'],['','','','','','','',''],['','','','','','','',''],['','','','','','','',''],['','','','','','','',''],['P','P','P','P','P','P','P','P'],['R','N','B','Q','K','B','N','R']];
+
+const _isW=p=>p&&p>='A'&&p<='Z';
+const _isB=p=>p&&p>='a'&&p<='z';
+const _opp=t=>t==='white'?'black':'white';
+const _cb=b=>b.map(r=>[...r]);
+const _pt=p=>_isW(p)?'white':'black';
+
+function _pseudo(board,row,col,gs){
+  const pc=board[row][col]; if(!pc)return[];
+  const turn=_pt(pc),type=pc.toUpperCase(),moves=[];
+  const fr=p=>turn==='white'?_isW(p):_isB(p);
+  const en=p=>turn==='white'?_isB(p):_isW(p);
+  const push=(tr,tc,ex={})=>{
+    if(tr<0||tr>7||tc<0||tc>7)return false;
+    const t=board[tr][tc]; if(fr(t))return false;
+    moves.push({from:{row,col},to:{row:tr,col:tc},piece:pc,captured:t||null,...ex});
+    return !t;
+  };
+  const slide=(dr,dc)=>{
+    let r=row+dr,c=col+dc;
+    while(r>=0&&r<=7&&c>=0&&c<=7){
+      const t=board[r][c]; if(fr(t))break;
+      moves.push({from:{row,col},to:{row:r,col:c},piece:pc,captured:t||null});
+      if(t)break; r+=dr;c+=dc;
+    }
+  };
+  if(type==='P'){
+    const d=_isW(pc)?-1:1,sr=_isW(pc)?6:1,pr=_isW(pc)?0:7;
+    const pfn=(tr,tc,cap)=>(_isW(pc)?['Q','R','B','N']:['q','r','b','n']).forEach(p=>moves.push({from:{row,col},to:{row:tr,col:tc},piece:pc,captured:cap||null,promotion:p}));
+    if(row+d>=0&&row+d<=7&&!board[row+d][col]){
+      if(row+d===pr)pfn(row+d,col,null);
+      else moves.push({from:{row,col},to:{row:row+d,col},piece:pc,captured:null});
+      if(row===sr&&!board[row+2*d][col])moves.push({from:{row,col},to:{row:row+2*d,col},piece:pc,captured:null,doublePush:true});
+    }
+    for(const dc of[-1,1]){
+      const tr=row+d,tc=col+dc; if(tr<0||tr>7||tc<0||tc>7)continue;
+      const t=board[tr][tc];
+      if(en(t)){if(tr===pr)pfn(tr,tc,t);else moves.push({from:{row,col},to:{row:tr,col:tc},piece:pc,captured:t});}
+      if(gs.ep&&gs.ep.row===tr&&gs.ep.col===tc)moves.push({from:{row,col},to:{row:tr,col:tc},piece:pc,captured:board[row][tc],enPassant:true});
+    }
+  }else if(type==='N'){[[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]].forEach(([dr,dc])=>push(row+dr,col+dc));}
+  else if(type==='B'){slide(-1,-1);slide(-1,1);slide(1,-1);slide(1,1);}
+  else if(type==='R'){slide(-1,0);slide(1,0);slide(0,-1);slide(0,1);}
+  else if(type==='Q'){slide(-1,-1);slide(-1,1);slide(1,-1);slide(1,1);slide(-1,0);slide(1,0);slide(0,-1);slide(0,1);}
+  else if(type==='K'){
+    [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]].forEach(([dr,dc])=>push(row+dr,col+dc));
+    const c=gs.castling;
+    if(_isW(pc)){
+      if(c.WK&&!board[7][5]&&!board[7][6])moves.push({from:{row,col},to:{row:7,col:6},piece:pc,captured:null,castling:'WK'});
+      if(c.WQ&&!board[7][3]&&!board[7][2]&&!board[7][1])moves.push({from:{row,col},to:{row:7,col:2},piece:pc,captured:null,castling:'WQ'});
+    }else{
+      if(c.BK&&!board[0][5]&&!board[0][6])moves.push({from:{row,col},to:{row:0,col:6},piece:pc,captured:null,castling:'BK'});
+      if(c.BQ&&!board[0][3]&&!board[0][2]&&!board[0][1])moves.push({from:{row,col},to:{row:0,col:2},piece:pc,captured:null,castling:'BQ'});
+    }
+  }
+  return moves;
+}
+function _allP(board,turn,gs){
+  const m=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c];
+    if(!p||(turn==='white'&&!_isW(p))||(turn==='black'&&!_isB(p)))continue;
+    m.push(..._pseudo(board,r,c,gs));
+  }
+  return m;
+}
+function _apply(board,mv){
+  const nb=_cb(board);
+  nb[mv.to.row][mv.to.col]=mv.promotion||mv.piece;
+  nb[mv.from.row][mv.from.col]='';
+  if(mv.enPassant)nb[mv.from.row][mv.to.col]='';
+  if(mv.castling==='WK'){nb[7][5]='R';nb[7][7]='';}
+  else if(mv.castling==='WQ'){nb[7][3]='R';nb[7][0]='';}
+  else if(mv.castling==='BK'){nb[0][5]='r';nb[0][7]='';}
+  else if(mv.castling==='BQ'){nb[0][3]='r';nb[0][0]='';}
+  return nb;
+}
+function _updGS(gs,mv){
+  const ns={turn:_opp(gs.turn),castling:{...gs.castling},ep:null};
+  if(mv.doublePush)ns.ep={row:mv.to.row+(_isW(mv.piece)?1:-1),col:mv.to.col};
+  if(mv.piece==='K'){ns.castling.WK=false;ns.castling.WQ=false;}
+  if(mv.piece==='k'){ns.castling.BK=false;ns.castling.BQ=false;}
+  if((mv.from.row===7&&mv.from.col===0)||(mv.to.row===7&&mv.to.col===0))ns.castling.WQ=false;
+  if((mv.from.row===7&&mv.from.col===7)||(mv.to.row===7&&mv.to.col===7))ns.castling.WK=false;
+  if((mv.from.row===0&&mv.from.col===0)||(mv.to.row===0&&mv.to.col===0))ns.castling.BQ=false;
+  if((mv.from.row===0&&mv.from.col===7)||(mv.to.row===0&&mv.to.col===7))ns.castling.BK=false;
+  // halfmove clock: resets on pawn move or capture (50-move rule)
+  ns.halfmove = (mv.piece.toUpperCase()==='P' || mv.captured) ? 0 : (gs.halfmove||0)+1;
+  // fullmove counter (increments after black moves)
+  ns.fullmove = (gs.fullmove||1) + (gs.turn==='black' ? 1 : 0);
+  return ns;
+}
+const _FGS={castling:{WK:false,WQ:false,BK:false,BQ:false},ep:null,halfmove:0,fullmove:1};
+function _findK(board,color){
+  const k=color==='white'?'K':'k';
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++)if(board[r][c]===k)return{row:r,col:c};
+  return null;
+}
+function _attacked(board,row,col,byT){
+  return _allP(board,byT,_FGS).some(m=>m.to.row===row&&m.to.col===col);
+}
+function _inChk(board,turn){
+  const k=_findK(board,turn);
+  return k?_attacked(board,k.row,k.col,_opp(turn)):false;
+}
+function _legal(board,turn,gs){
+  return _allP(board,turn,gs).filter(mv=>{
+    if(mv.castling){
+      if(_inChk(board,turn))return false;
+      const mc=mv.castling.endsWith('K')?5:3;
+      const tb=_cb(board);tb[mv.from.row][mc]=mv.piece;tb[mv.from.row][mv.from.col]='';
+      if(_attacked(tb,mv.from.row,mc,_opp(turn)))return false;
+    }
+    return !_inChk(_apply(board,mv),turn);
+  });
+}
+
+function _eval(board){
+  let sc=0,wB=0,bB=0;
+  const wPF=new Int8Array(8),bPF=new Int8Array(8);
+  const wPA=[],bPA=[];
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p)continue;
+    const t=p.toUpperCase(),v=_VAL[t]||0,pst=_PST[t];
+    if(_isW(p)){sc+=v+pst[r][c];if(t==='B')wB++;if(t==='P'){wPF[c]++;wPA.push({r,c});}}
+    else{sc-=v+pst[7-r][c];if(t==='b')bB++;if(t==='p'){bPF[c]++;bPA.push({r,c});}}
+  }
+  if(wB>=2)sc+=30; if(bB>=2)sc-=30;
+  for(let c=0;c<8;c++){
+    if(wPF[c]>1)sc-=20*(wPF[c]-1);
+    if(bPF[c]>1)sc+=20*(bPF[c]-1);
+    const lf=c>0?c-1:-1,rf=c<7?c+1:-1;
+    if(wPF[c]>0&&!(lf>=0&&wPF[lf])&&!(rf>=0&&wPF[rf]))sc-=20*wPF[c];
+    if(bPF[c]>0&&!(lf>=0&&bPF[lf])&&!(rf>=0&&bPF[rf]))sc+=20*bPF[c];
+  }
+  for(const{r,c}of wPA){
+    let ok=true;
+    outer:for(let fr=0;fr<r;fr++)for(const fc of[c-1,c,c+1]){if(fc>=0&&fc<=7&&board[fr][fc]==='p'){ok=false;break outer;}}
+    if(ok)sc+=20+(7-r)*18;
+  }
+  for(const{r,c}of bPA){
+    let ok=true;
+    outer:for(let fr=r+1;fr<8;fr++)for(const fc of[c-1,c,c+1]){if(fc>=0&&fc<=7&&board[fr][fc]==='P'){ok=false;break outer;}}
+    if(ok)sc-=20+r*18;
+  }
+  for(let c=0;c<8;c++){
+    let wR=false,bR=false;
+    for(let r=0;r<8;r++){if(board[r][c]==='R')wR=true;if(board[r][c]==='r')bR=true;}
+    if(wR)sc+=wPF[c]===0?(bPF[c]===0?25:13):0;
+    if(bR)sc-=bPF[c]===0?(wPF[c]===0?25:13):0;
+  }
+  const wK=_findK(board,'white'),bK=_findK(board,'black');
+  if(wK&&wK.row===7){
+    const kc=wK.col;
+    for(const sc2 of[kc-1,kc,Math.min(7,kc+1)]){
+      if(sc2>=0&&sc2<=7){if(board[6][sc2]==='P')sc+=14;else if(board[5][sc2]==='P')sc+=7;}
+    }
+  }
+  if(bK&&bK.row===0){
+    const kc=bK.col;
+    for(const sc2 of[kc-1,kc,Math.min(7,kc+1)]){
+      if(sc2>=0&&sc2<=7){if(board[1][sc2]==='p')sc-=14;else if(board[2][sc2]==='p')sc-=7;}
+    }
+  }
+  return sc;
+}
+
+function _quiesce(board,alpha,beta,maxing,gs,qleft){
+  const sp=_eval(board);
+  if(qleft<=0)return sp;
+  if(maxing){if(sp>=beta)return beta;alpha=Math.max(alpha,sp);}
+  else{if(sp<=alpha)return alpha;beta=Math.min(beta,sp);}
+  const turn=maxing?'white':'black';
+  const caps=_allP(board,turn,gs)
+    .filter(m=>(m.captured||m.enPassant||m.promotion)&&!_inChk(_apply(board,m),turn));
+  caps.sort((a,b)=>{
+    const va=a.captured?(_VAL[a.captured.toUpperCase()]||0)-(_VAL[a.piece.toUpperCase()]||0)*.1:-999;
+    const vb=b.captured?(_VAL[b.captured.toUpperCase()]||0)-(_VAL[b.piece.toUpperCase()]||0)*.1:-999;
+    return vb-va;
+  });
+  if(maxing){
+    for(const m of caps){
+      const s=_quiesce(_apply(board,m),alpha,beta,false,_updGS(gs,m),qleft-1);
+      alpha=Math.max(alpha,s); if(alpha>=beta)return beta;
+    }
+    return alpha;
+  }else{
+    for(const m of caps){
+      const s=_quiesce(_apply(board,m),alpha,beta,true,_updGS(gs,m),qleft-1);
+      beta=Math.min(beta,s); if(beta<=alpha)return alpha;
+    }
+    return beta;
+  }
+}
+
+function _order(moves){
+  return moves.sort((a,b)=>{
+    const va=a.captured?(_VAL[a.captured.toUpperCase()]||0)-(_VAL[a.piece.toUpperCase()]||0)*.1:-999;
+    const vb=b.captured?(_VAL[b.captured.toUpperCase()]||0)-(_VAL[b.piece.toUpperCase()]||0)*.1:-999;
+    return vb-va;
+  });
+}
+function _mm(board,depth,alpha,beta,maxing,gs){
+  const turn=maxing?'white':'black';
+  if(depth===0)return _quiesce(board,alpha,beta,maxing,gs,5);
+  const moves=_legal(board,turn,gs);
+  if(!moves.length)return _inChk(board,turn)?(maxing?-90000-depth*100:90000+depth*100):0;
+  _order(moves);
+  if(maxing){
+    let best=-Infinity;
+    for(const m of moves){
+      best=Math.max(best,_mm(_apply(board,m),depth-1,alpha,beta,false,_updGS(gs,m)));
+      alpha=Math.max(alpha,best); if(beta<=alpha)break;
+    }
+    return best;
+  }else{
+    let best=Infinity;
+    for(const m of moves){
+      best=Math.min(best,_mm(_apply(board,m),depth-1,alpha,beta,true,_updGS(gs,m)));
+      beta=Math.min(beta,best); if(beta<=alpha)break;
+    }
+    return best;
+  }
+}
+// Best move for whichever side is to move in `gs`. Eval is white-POV; if the
+// mover is white we maximize, if black we minimize. After applying a move the
+// opponent moves next — that side's turn dictates the recursive _mm `maxing`.
+function _bestMove(board,gs,depth){
+  const moves=_legal(board, gs.turn, gs);
+  if(!moves.length)return null;
+  _order(moves);
+  const moverIsWhite = gs.turn === 'white';
+  let bv = moverIsWhite ? -Infinity : Infinity;
+  let bm = [];
+  for(const m of moves){
+    const newGs = _updGS(gs, m);
+    const v = _mm(_apply(board, m), depth-1, -Infinity, Infinity, newGs.turn === 'white', newGs);
+    if (moverIsWhite){
+      if (v > bv + 1) { bv = v; bm = [m]; }
+      else if (v >= bv - 1) bm.push(m);
+    } else {
+      if (v < bv - 1) { bv = v; bm = [m]; }
+      else if (v <= bv + 1) bm.push(m);
+    }
+  }
+  return bm[Math.floor(Math.random()*Math.min(bm.length,3))];
+}
+
+function _san(board,mv,all){
+  const{from,to,piece,captured,castling,promotion,enPassant}=mv;
+  if(castling==='WK'||castling==='BK')return'O-O';
+  if(castling==='WQ'||castling==='BQ')return'O-O-O';
+  const F='abcdefgh',t=piece.toUpperCase();
+  const ts=F[to.col]+(8-to.row);
+  let s='';
+  if(t!=='P'){
+    s+=t;
+    const amb=all.filter(m=>m.piece.toUpperCase()===t&&m.to.row===to.row&&m.to.col===to.col&&!(m.from.row===from.row&&m.from.col===from.col));
+    if(amb.length){if(amb.every(m=>m.from.col!==from.col))s+=F[from.col];else if(amb.every(m=>m.from.row!==from.row))s+=(8-from.row);else s+=F[from.col]+(8-from.row);}
+  }else if(captured||enPassant)s+=F[from.col];
+  if(captured||enPassant)s+='x';
+  s+=ts;
+  if(promotion)s+='='+promotion.toUpperCase();
+  return s;
+}
+
+// ─── draw detection helpers ───────────────────────────────────────────────
+// Returns true if neither side has enough material to force mate.
+// Covers: K vs K, K+minor vs K, K vs K+minor, K+B vs K+B (same-color bishops).
+function _insufficient(board){
+  let wP=0,wN=0,wB=0,wR=0,wQ=0, bP=0,bN=0,bB=0,bR=0,bQ=0;
+  let wBsq=null, bBsq=null;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p) continue;
+    const t=p.toUpperCase(); if(t==='K') continue;
+    if(_isW(p)){
+      if(t==='P')wP++; else if(t==='N')wN++;
+      else if(t==='B'){wB++;wBsq=(r+c)&1;}
+      else if(t==='R')wR++; else if(t==='Q')wQ++;
+    } else {
+      if(t==='P')bP++; else if(t==='N')bN++;
+      else if(t==='B'){bB++;bBsq=(r+c)&1;}
+      else if(t==='R')bR++; else if(t==='Q')bQ++;
+    }
+  }
+  if(wP||bP||wR||bR||wQ||bQ) return false;
+  const wm=wN+wB, bm=bN+bB;
+  if(wm===0 && bm===0) return true;                          // K v K
+  if(wm===1 && bm===0) return true;                          // K+minor v K
+  if(wm===0 && bm===1) return true;                          // K v K+minor
+  if(wN===0 && bN===0 && wB===1 && bB===1 && wBsq===bBsq) return true; // opposite sides, same-color bishops
+  return false;
+}
+
+// Position key for threefold-repetition tracking.
+// Includes placement, side-to-move, castling rights, and en-passant square.
+function _posKey(board, gs){
+  let s='';
+  for(let r=0;r<8;r++) s += board[r].join('|') + '/';
+  s += gs.turn[0];
+  s += (gs.castling.WK?'K':'') + (gs.castling.WQ?'Q':'') + (gs.castling.BK?'k':'') + (gs.castling.BQ?'q':'') || '-';
+  s += gs.ep ? gs.ep.row+','+gs.ep.col : '-';
+  return s;
+}
+</script>
+
+<script>
+const SYMBOLS    = _SYM;
+const INIT_BOARD = _INIT;
+const isW = _isW, isB = _isB;
+const inCheck = _inChk, getLegal = _legal, applyMove = _apply;
+const updateGS = _updGS, findKing = _findK, evalPos = _eval;
+const isInsufficient = _insufficient, posKey = _posKey;
+const PVAL = {P:1, N:3, B:3, R:5, Q:9, K:0};
+
+// ─── WebAudio sound effects (no external files) ────────────────────────────
+const Audio_ = {
+  ctx: null, enabled: true,
+  init(){ try { this.ctx = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){} },
+  _beep({f=440, dur=0.08, type='sine', gain=0.15, slideTo=null, delay=0}={}){
+    if (!this.enabled || !this.ctx) return;
+    const t0 = this.ctx.currentTime + delay;
+    const osc = this.ctx.createOscillator(), g = this.ctx.createGain();
+    osc.type = type; osc.frequency.setValueAtTime(f, t0);
+    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t0 + dur);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(gain, t0 + 0.006);
+    g.gain.exponentialRampToValueAtTime(0.0005, t0 + dur);
+    osc.connect(g); g.connect(this.ctx.destination);
+    osc.start(t0); osc.stop(t0 + dur + 0.02);
+  },
+  move()    { this._beep({ f:520, dur:0.07,  type:'triangle', gain:0.10 }); },
+  capture() { this._beep({ f:300, dur:0.11,  type:'sawtooth', gain:0.14, slideTo:170 }); },
+  check()   { this._beep({ f:660, dur:0.09,  type:'square',   gain:0.13 });
+              this._beep({ f:880, dur:0.10,  type:'square',   gain:0.10, delay:0.09 }); },
+  castle()  { this._beep({ f:440, dur:0.08,  type:'triangle', gain:0.10 });
+              this._beep({ f:587, dur:0.10,  type:'triangle', gain:0.10, delay:0.08 }); },
+  promote() { this._beep({ f:523, dur:0.10,  type:'triangle', gain:0.12 });
+              this._beep({ f:784, dur:0.12,  type:'triangle', gain:0.12, delay:0.09 });
+              this._beep({ f:1047,dur:0.16,  type:'triangle', gain:0.13, delay:0.19 }); },
+  win()     { [523,659,784,1047].forEach((f,i)=>this._beep({ f, dur:0.14, type:'triangle', gain:0.12, delay:0.12*i })); },
+  lose()    { [392,311,247,196].forEach((f,i)=>this._beep({ f, dur:0.18, type:'sawtooth', gain:0.11, delay:0.14*i })); },
+  draw()    { this._beep({ f:330, dur:0.30, type:'sine', gain:0.10 });
+              this._beep({ f:330, dur:0.30, type:'sine', gain:0.08, delay:0.25 }); },
+};
+
+// ─── Stockfish UCI integration ─────────────────────────────────────────────
+let sf = null, sfReady = false, sfCurrentSearch = null;
+
+async function loadStockfish() {
+  try {
+    document.getElementById('eval-score').textContent = '\u22ef';
+    let code;
+    const inlineEl = document.getElementById('sf-code');
+    if (inlineEl && inlineEl.textContent.trim().length > 1000) {
+      code = inlineEl.textContent; // use bundled offline copy
+    } else {
+      const r = await fetch('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js');
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      code = await r.text();
+    }
+    const blob = new Blob([code], { type: 'application/javascript' });
+    sf = new Worker(URL.createObjectURL(blob));
+    sf.onmessage = e => {
+      const line = typeof e.data === 'string' ? e.data : String(e.data);
+      if (line === 'readyok') {
+        sfReady = true;
+        sf.postMessage('setoption name Hash value 32');
+        document.getElementById('eval-score').textContent = '0.0';
+        console.log('[SF] Stockfish ready');
+      }
+      if (sfCurrentSearch) sfCurrentSearch(line);
+    };
+    sf.postMessage('uci');
+    sf.postMessage('isready');
+  } catch (err) {
+    console.warn('[SF] Load failed, using built-in engine:', err);
+    document.getElementById('eval-score').textContent = '0.0';
+  }
+}
+
+function boardToFen(board, gs) {
+  let fen = '';
+  for (let r = 0; r < 8; r++) {
+    let empty = 0;
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (!p) { empty++; }
+      else { if (empty) { fen += empty; empty = 0; } fen += p; }
+    }
+    if (empty) fen += empty;
+    if (r < 7) fen += '/';
+  }
+  const t = gs.turn === 'white' ? 'w' : 'b';
+  let castle = '';
+  if (gs.castling.WK) castle += 'K';
+  if (gs.castling.WQ) castle += 'Q';
+  if (gs.castling.BK) castle += 'k';
+  if (gs.castling.BQ) castle += 'q';
+  const ep = gs.ep ? 'abcdefgh'[gs.ep.col] + (8 - gs.ep.row) : '-';
+  return `${fen} ${t} ${castle || '-'} ${ep} 0 1`;
+}
+
+function sfMoveToInternal(sfMove, board) {
+  const F = 'abcdefgh';
+  const fc = F.indexOf(sfMove[0]);
+  const fr = 8 - parseInt(sfMove[1]);
+  const tc = F.indexOf(sfMove[2]);
+  const tr = 8 - parseInt(sfMove[3]);
+  const promoChar = sfMove[4] || null;
+  const piece = board[fr] && board[fr][fc];
+  if (!piece) return null;
+  const target = board[tr][tc];
+  const isEP = piece.toUpperCase() === 'P' && fc !== tc && !target;
+  let castling = null;
+  if (piece === 'K' && fc === 4 && fr === 7) castling = tc === 6 ? 'WK' : tc === 2 ? 'WQ' : null;
+  if (piece === 'k' && fc === 4 && fr === 0) castling = tc === 6 ? 'BK' : tc === 2 ? 'BQ' : null;
+  const mv = {
+    from: { row: fr, col: fc },
+    to:   { row: tr, col: tc },
+    piece,
+    captured: isEP ? board[fr][tc] : (target || null),
+  };
+  if (isEP) mv.enPassant = true;
+  if (castling) mv.castling = castling;
+  if (promoChar) mv.promotion = piece === 'P' ? promoChar.toUpperCase() : promoChar.toLowerCase();
+  if (piece.toUpperCase() === 'P' && Math.abs(fr - tr) === 2) mv.doublePush = true;
+  return mv;
+}
+
+// Difficulty map: select value → { skill (0-20), depth (plies), movetime (ms) }
+//
+// Why Skill Level instead of UCI_Elo? Stockfish.js@10's UCI_LimitStrength is
+// flaky — the option is silently clamped or ignored in many builds, so all
+// three levels ended up at near-max strength with only movetime to slow them
+// down. Skill Level is the universally-supported strength dial: it injects
+// graduated randomness and skips good moves with rising probability as the
+// number drops. Combined with a hard `go depth N` cap, the resulting Elo is
+// fairly stable across hardware.
+//
+// Approximate stockfish.js@10 strength against humans (CCRL-ish):
+//   Skill  0  ≈ 1100      Skill  6  ≈ 1700      Skill 12 ≈ 2200
+//   Skill  1  ≈ 1200      Skill  8  ≈ 1900      Skill 14 ≈ 2400
+//   Skill  4  ≈ 1500      Skill 10 ≈ 2000       Skill 20 ≈ full strength
+// Depth caps add a hard ceiling — even Skill 20 plays weaker at depth 6 than
+// at depth 14. Movetime is the safety belt for very slow machines.
+const DIFF_CFG = {
+  '2': { skill: 1,  depth: 6,  movetime: 250  },   // Horikita ~1200
+  '4': { skill: 10, depth: 12, movetime: 1000 },   // Arisu ~2000
+  '5': { skill: 12, depth: 14, movetime: 1500 },   // Ayanokouji ~2200
+};
+
+// Stockfish reports score from the side to move. We derive that side from the
+// FEN itself ('w' or 'b') and convert to white POV before exposing the value,
+// so callers never have to think about whose turn it is.
+function sfSearch(fen, diffKey, onDone) {
+  let cfg = DIFF_CFG[String(diffKey)] || DIFF_CFG['4'];
+  // ── Ayanokouji rage: when he's losing by ≥ 4.5 pawns, drop the safeties
+  // and let Stockfish play at full strength. Rage is sticky for the rest of
+  // the game — once he's gone serious he doesn't relax even if the eval
+  // recovers or the player switches opponent away and back. The flag lives
+  // on G so a New Game (which rebuilds G) starts him fresh.
+  if (String(diffKey) === '5'){
+    if (!G.ayanoRage){
+      const whiteAdv  = (G && G.prevEval) || 0;
+      const botLossCp = _pSign() * whiteAdv;     // bot-perspective loss in cp
+      if (botLossCp >= 450) G.ayanoRage = true;
+    }
+    if (G.ayanoRage){
+      cfg = { skill: 20, depth: 0, movetime: 3000 };  // depth 0 → no cap
+    }
+  }
+  const whiteSign = fen.split(' ')[1] === 'w' ? 1 : -1;
+  let bestScoreW = 0, bestMateW = null;
+  sfCurrentSearch = line => {
+    const cpM = line.match(/\bscore cp (-?\d+)/);
+    if (cpM) {
+      bestScoreW = parseInt(cpM[1]) * whiteSign;
+      bestMateW  = null;
+      updateEvalBar(bestScoreW);
+    }
+    const mateM = line.match(/\bscore mate (-?\d+)/);
+    if (mateM) {
+      const m = parseInt(mateM[1]);
+      bestScoreW = (m > 0 ? 90000 : -90000) * whiteSign;
+      bestMateW  = m * whiteSign;
+      updateEvalBar(bestScoreW, bestMateW);
+    }
+    if (line.startsWith('bestmove')) {
+      sfCurrentSearch = null;
+      const mv = line.split(' ')[1];
+      onDone(mv && mv !== '(none)' ? mv : null, bestScoreW, bestMateW);
+    }
+  };
+  sf.postMessage('stop');
+  // Make sure UCI_LimitStrength is OFF so it doesn't fight Skill Level.
+  sf.postMessage('setoption name UCI_LimitStrength value false');
+  sf.postMessage('setoption name Skill Level value ' + cfg.skill);
+  sf.postMessage('position fen ' + fen);
+  // depth 0 (or missing) ⇒ time-only search (used in Ayanokouji's rage mode).
+  sf.postMessage(cfg.depth
+    ? `go depth ${cfg.depth} movetime ${cfg.movetime}`
+    : `go movetime ${cfg.movetime}`);
+}
+
+function sfEval(fen, _unused, onDone) {
+  // Full-strength 80 ms eval — used to update eval bar after the bot's move.
+  // Returns white-POV (cp, mate). The 2nd arg is kept for API compatibility
+  // with older callers but is no longer needed; sign is derived from the FEN.
+  const whiteSign = fen.split(' ')[1] === 'w' ? 1 : -1;
+  let scoreW = 0, mateW = null;
+  sfCurrentSearch = line => {
+    const cpM = line.match(/\bscore cp (-?\d+)/);
+    if (cpM) { scoreW = parseInt(cpM[1]) * whiteSign; mateW = null; }
+    const mateM = line.match(/\bscore mate (-?\d+)/);
+    if (mateM) {
+      const m = parseInt(mateM[1]);
+      scoreW = (m > 0 ? 90000 : -90000) * whiteSign;
+      mateW  = m * whiteSign;
+    }
+    if (line.startsWith('bestmove')) {
+      sfCurrentSearch = null;
+      onDone(scoreW, mateW);
+    }
+  };
+  sf.postMessage('stop');
+  sf.postMessage('setoption name UCI_LimitStrength value false');
+  sf.postMessage('setoption name Skill Level value 20');
+  sf.postMessage('position fen ' + fen);
+  sf.postMessage('go movetime 80');
+}
+
+// askWorker callback signature: cb(move, whiteScore, whiteMate).
+// Both numeric values are white-POV — sfSearch already converts them.
+function askWorker(board, gs, depth, cb) {
+  if (sf && sfReady) {
+    const fen = boardToFen(board, gs);
+    sfSearch(fen, depth, (sfMv, wScore, wMate) => {
+      if (!sfMv) { cb(null, wScore, wMate); return; }
+      const mv = sfMoveToInternal(sfMv, board);
+      if (!mv)  { cb(null, wScore, wMate); return; }
+      cb(mv, wScore, wMate);
+    });
+  } else {
+    // Fallback: built-in minimax (used while SF is still loading).
+    // _bestMove now finds the best move for whichever side is to move.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const mv = _bestMove(board, gs, depth);
+        cb(mv, mv ? evalPos(_apply(board, mv)) : evalPos(board), null);
+      })
+    );
+  }
+}
+
+const L = {
+  opening: [
+    "So you wish to play. How pleasant. I do hope you'll provide some measure of entertainment.",
+    "A chess board. How refreshingly direct. Let us see what kind of mind you possess.",
+    "I've been looking forward to this. An interesting opponent is something I treasure greatly.",
+    "Most people bore me within ten moves. I wonder — will you be different?",
+    "Let the game begin. Though I suggest you savour these early moves. They may be all you enjoy.",
+    "I confess, I find chess to be the most honest conversation two people can have. Shall we talk?",
+    "Sixty-four squares. Thirty-two pieces. And yet no two games are ever alike. How delightful.",
+    "Shall we see how much of yourself you're willing to reveal over the board?",
+    "I've cleared my afternoon. I hope you'll prove worthy of it.",
+    "You arrived. I confess I half-expected you to reconsider.",
+    "Come in. Sit down. Let us have a proper conversation.",
+    "A game, at last. I was growing positively dull without one.",
+    "How thoughtful of you to arrive. I detest delay.",
+    "Please — make yourself comfortable. The discomfort will come soon enough.",
+    "I do enjoy this particular silence: the one before the first move.",
+    "I ought to warn you: I am rarely generous, and never polite for long.",
+    "A worthy opponent is so very scarce. I hope you'll forgive my anticipation.",
+    "Shall we begin? I've been practising my patience for just this occasion."
+  ],
+
+  // ── opening-specific: first move ──────────────────────────────────────────
+  op_e4:["The King's Pawn. Classical, direct — I approve.","1.e4. A confident first breath. Good.","Open games, then. How refreshingly honest of you."],
+  op_d4:["1.d4. Quiet, patient, precise. I'll remember that.","The Queen's Pawn. You prefer structure to fireworks — interesting.","A closed-game preference. I find those reveal more about a player."],
+  op_Nf3:["Réti-like. You don't want to show your hand just yet. Clever.","A flexible opening. You're cautious. Or calculating."],
+  op_c4:["The English. Refined. I'll take that as a small compliment.","1.c4. A patient attack on the centre. Unusual, for most."],
+  op_other:["An irregular first move. I like players who don't follow the manual.","You've chosen a less-travelled road. Let's see where it leads."],
+
+  // ── opening replies (bot's move 1) ────────────────────────────────────────
+  op_replySicilian:["The Sicilian. Sharp. Asymmetric. My favourite reply to 1.e4.","I prefer imbalance. Let's see if you can handle it."],
+  op_replyFrench:  ["The French. Solid — and quietly provocative.","A fortress, with teeth. Let's test yours."],
+  op_replyCaro:    ["The Caro-Kann. Reliable. Resilient. Suited to my temperament.","I'll take what's sound over what's flashy."],
+  op_replyKings:   ["Symmetry. For now.","I'll mirror you. It's the most instructive way to begin."],
+
+  // ── bot's own actions ─────────────────────────────────────────────────────
+  botCap: [
+    "Thank you for that.","How gracious of you to offer.","A small gift. I accept.",
+    "One less piece to concern yourself with.","How... convenient.",
+    "These little exchanges are rather satisfying.","I'll take that, if you don't mind.",
+    "Efficient. I appreciate efficiency.","Your generosity is noted.",
+    "A clean trade. Or so you'll want to believe.",
+    "I shall treasure this piece. Briefly.",
+    "The board grows less crowded. I find I prefer it so.",
+    "Another small parting. I find I don't mind them much.",
+    "Material is, in the end, only a suggestion. But I'll take it."
+  ],
+  botCapMajor: [ // bot captures queen/rook
+    "The queen. A pity, really — I was enjoying her company.",
+    "A rook. That should simplify the rest of this considerably.",
+    "That was a significant loss for you. I imagine you feel it already.",
+    "Major material. The position tilts — decisively.",
+    "Your rook. An architect of endgames, gone before the endgame begins.",
+    "Major material. The conversation shifts accordingly.",
+    "Your queen is mine. I hope you were not too attached."
+  ],
+  botCapHanging: [ // bot takes an undefended piece
+    "You left that one undefended. I assumed it was an invitation.",
+    "Unprotected. Unclaimed. Now mine.",
+    "A hanging piece is an open door. It would be rude not to enter.",
+    "I do wonder if you meant to leave that there.",
+    "You've provided for me without being asked. How generous.",
+    "I would not have passed that up — I'm afraid I lack that kind of restraint.",
+    "One must tend one's pieces. They do not tend themselves.",
+    "A careless oversight. Or perhaps you wished me to have it. Either way."
+  ],
+  botChk: [
+    "Check. I trust you noticed.",
+    "Check. Do take your time — though it won't change anything.",
+    "Check. The walls close in, don't they?",
+    "Your king grows uneasy. As it should.",
+    "Check. How does it feel to be precisely where I intended you to be?",
+    "Check. I wonder how long you can keep running.",
+    "Check. Every move you make now has been anticipated.",
+    "Check. A gentle reminder of your obligations.",
+    "Check. Your turn — however brief.",
+    "Check. A necessary interruption.",
+    "I place your king in check. It's an act of courtesy, really. You ought to know."
+  ],
+  botFork: [ // bot's move attacks two valuable pieces
+    "Two targets. One piece. Choose carefully — I'm watching.",
+    "A fork. Which do you value more? Decide quickly.",
+    "I'll admit, these little crossroads are my favourite moments.",
+    "Two threats, simultaneously. The classical motif — and always satisfying.",
+    "Your pieces stand divided by a single square. Choose which to mourn.",
+    "Two futures, one decision. I find these moments rather beautiful."
+  ],
+  botCastle: [
+    "I'll bring my king to safety. There is no urgency; I simply prefer tidy rooms.",
+    "Castled. The king retires; the rook takes the stage.",
+    "Order. Everything in its place.",
+    "I shall tidy my king. An old habit.",
+    "Castled. Now the house is in order."
+  ],
+  botPromote: [
+    "Promotion. I prefer having more queens than strictly necessary.",
+    "A pawn reaches the eighth rank. The board shifts — in my favour.",
+    "Another queen. Predictable, I know, but effective.",
+    "The eighth rank delivers. How reliable of it.",
+    "A new queen. She brings the conversation nicely to its close."
+  ],
+  botEP: [
+    "En passant. A small elegance — I hope you appreciated it.",
+    "En passant. I believe the French called it 'in passing.' Charming, no?",
+    "A fleeting capture. Some rules exist only to reward attention."
+  ],
+
+  // ── player's actions ──────────────────────────────────────────────────────
+  pChk: [
+    "Oh? How bold of you. I'll give you that.",
+    "Check? How... unexpected. I didn't anticipate that approach.",
+    "You've managed to threaten my king. A momentary inconvenience.",
+    "Interesting. Don't let it go to your head.",
+    "Hmm. That was more perceptive than I gave you credit for.",
+    "A check from you. I confess it has my full attention now.",
+    "My king is displeased. You have his notice — for the moment.",
+    "A check. Very well, you have my attention. Briefly.",
+    "You've caught my king's eye. An accomplishment, of sorts.",
+    "Oh — a check. Let us see whether you can keep the initiative."
+  ],
+  pBlunder: [
+    "Oh my. Did you mean to do that?",
+    "How unfortunate. I almost felt sorry for you.",
+    "How predictable. Did you truly not see that coming?",
+    "A pity. I was beginning to hope for something more.",
+    "How tedious. I had expected more resistance than this.",
+    "Shall I give you a moment to reconsider? No... that would be uncharacteristically kind of me.",
+    "The board punishes carelessness without sentiment.",
+    "Careless. I hope that wasn't your plan all along.",
+    "You handed me that. I shan't pretend otherwise.",
+    "That was — unfortunate. For you, I mean.",
+    "A small kindness. To me.",
+    "I shall have to punish that, you understand. It wouldn't be proper not to.",
+    "How disappointing. One hoped for a little more."
+  ],
+  pHang: [ // player left a piece hanging (detected after their move)
+    "You've left a piece undefended. I do hope you notice before I do.",
+    "That piece has no one watching it. How careless.",
+    "A hanging piece — practically gift-wrapped.",
+    "A piece of yours is standing quite alone. How worrying for it.",
+    "One of your men has no defender. I shan't pretend I haven't noticed.",
+    "You've left something vulnerable. I'm not obligated to warn you twice.",
+    "An undefended piece. I gather you've misplaced your attention.",
+    "I see a piece with no friends at all. How convenient for me."
+  ],
+  pGood: [
+    "Oh? How interesting.",
+    "I see. You're more perceptive than I initially assessed.",
+    "Hmm. That was not what I expected. How delightful.",
+    "Well played. You've earned the right to continue.",
+    "How intriguing. You managed to surprise me.",
+    "My, my. It seems I'll need to recalculate.",
+    "...I confess, I didn't anticipate that. How refreshing.",
+    "A sharp move. You have my full attention now.",
+    "That required foresight. You have more than I credited.",
+    "Ah. You see the board as I do, if only for that instant.",
+    "Adequate. Possibly better than adequate.",
+    "I shall have to work a little harder. How delightful.",
+    "A reasonable move. You have your moments.",
+    "You answered the position's question. Not all do."
+  ],
+  pExcellent: [
+    "...That was a brilliant move. I mean that without sarcasm.",
+    "Rare. Genuinely rare. You've outplayed me for a moment.",
+    "An extraordinary decision. I'll be thinking about that one after the game.",
+    "A move I would not have dismissed. High praise, for what it's worth.",
+    "You're playing as though you expect to win. I am, briefly, uncertain.",
+    "That required real calculation. I had almost forgotten this was a contest.",
+    "Remarkable. One does not expect such clarity from strangers.",
+    "...That was excellent. I shan't pretend otherwise.",
+    "A move worthy of our game. Thank you for it.",
+    "I admit a small thrill. That was precisely the right square.",
+    "Uncommon clarity. You are, for now, formidable."
+  ],
+  pRecovery: [ // NEW: player claws back from a losing position
+    "You've steadied yourself. That is harder than it looks.",
+    "A recovery. Most give up before they find it.",
+    "I had begun to relax. You'll forgive me — that was premature.",
+    "The position is alive again. Your doing, I grant.",
+    "A difficult save. I respect it, even as it inconveniences me."
+  ],
+  pCastle: [
+    "Castling already? Practical. A little predictable, but practical.",
+    "Your king retires behind his wall. We'll see how sturdy it is.",
+    "Your king takes refuge. A sensible moment — perhaps a little late."
+  ],
+  pPromote: [
+    "A new queen on your side. How ambitious.",
+    "Promotion. The game grows sharper.",
+    "Another queen. Our dance is about to become quite crowded."
+  ],
+
+  // ── bot reactions to own play ────────────────────────────────────────────
+  aInaccuracy: [
+    "...Hmm. I may have miscalculated there. How rare.",
+    "An inaccuracy on my part. Don't mistake it for a habit.",
+    "Interesting. The position is more complex than I estimated.",
+    "...I see. I underestimated that line. How unexpectedly instructive.",
+    "A slip. Minor. Easily corrected.",
+    "I ought to have seen further. A lapse.",
+    "An imprecision. I shall have to atone for it presently."
+  ],
+
+  // ── position / phase flavour ─────────────────────────────────────────────
+  winning: [
+    "The conclusion approaches. I hope you'll accept it gracefully.",
+    "Can you see it yet? The inevitable?",
+    "There's a certain beauty to a position with only one logical outcome.",
+    "I wonder at what point you'll realise it's already over.",
+    "The threads tighten. Every move now is a formality.",
+    "I count the moves until the end. A habit of mine.",
+    "The outcome is no longer in doubt. Only its shape remains.",
+    "One finishes well, or poorly. I intend to finish well."
+  ],
+  crushing: [ // |eval| > 600
+    "This is no longer a contest. It's a demonstration.",
+    "I believe the kind thing would be to offer you a draw. I shan't.",
+    "At this point, prolonging the game is a courtesy — to me.",
+    "It would be kinder to end it. I'm rarely accused of kindness.",
+    "My advantage is now arithmetic, not strategy."
+  ],
+  losing: [
+    "...I see. You've proven more capable than I initially assessed.",
+    "How curious. I find myself in a rather unfamiliar position.",
+    "...You're better than I thought. I admit that freely.",
+    "The board surprises me. You surprise me. That is no small thing.",
+    "I am behind. I had not accounted for that possibility today.",
+    "I find myself on unfamiliar ground. It is a remarkable sensation.",
+    "You have the upper hand. I shan't pretend otherwise; that would waste both our time.",
+    "I've begun to take notes on you. Mentally, of course."
+  ],
+  midgame: [
+    "The pieces have found their places. Now the real conversation begins.",
+    "Middle-game. Tension everywhere, if one knows where to look.",
+    "The opening was prologue. This is the story.",
+    "The opening is done. From here on, every move declares character.",
+    "Development concluded. The real work begins."
+  ],
+  endgame: [
+    "We've entered the endgame. This is where truth reveals itself.",
+    "The board grows quieter. And yet, somehow, more dangerous.",
+    "Endgames are like conversations stripped of pretense. Quite revealing.",
+    "Every pawn matters now. I trust you already knew that.",
+    "So few pieces. So much meaning behind each one.",
+    "Pawns and kings. The game reduced to its purest question.",
+    "The board has thinned. What remains speaks louder.",
+    "Endgames do not forgive; they merely explain."
+  ],
+
+  // ── idle prompts ─────────────────────────────────────────────────────────
+  idle: [
+    "Take your time. I rather enjoy watching you think.",
+    "Are you still there? I do hope you haven't surrendered mentally.",
+    "I'm in no hurry. Though the outcome remains the same regardless.",
+    "Thinking deeply? How refreshing. Most opponents simply react.",
+    "The longer you take, the more I suspect you may actually surprise me.",
+    "A long pause. Calculation, or hesitation? I wonder.",
+    "Please — take your time. Good moves deserve consideration.",
+    "You think deeply. That's unusual. I shan't interrupt.",
+    "I'll not hurry you. I am, as always, content to wait.",
+    "A long think. I do hope it yields something worth my reply."
+  ],
+
+  // ── endings ─────────────────────────────────────────────────────────────
+  victory: [
+    "Checkmate. You provided more entertainment than most. That's a genuine compliment.",
+    "Checkmate. You played with conviction. That counts for something.",
+    "And so it ends. You should be proud — few last this long against me.",
+    "Checkmate. I enjoyed our game. Truly.",
+    "A final move. Clean. I hope you'll agree it was — elegant.",
+    "Checkmate. You were rarely boring. That is my highest praise.",
+    "It ends as it had to. Still — a respectable fight.",
+    "Checkmate. I shall remember you, which is more than I do for most."
+  ],
+  defeat: [
+    "...Checkmate. How extraordinary. You've earned my genuine respect.",
+    "I see. So it ends here. Well played — truly, and without qualification.",
+    "You've done what almost no one manages to do. I find I'm not entirely displeased about it.",
+    "A defeat I accept with grace. You were the better player today.",
+    "...This is a new experience. I shall remember it.",
+    "Checkmate against me. A first. I find I welcome it.",
+    "I have been outplayed. Truly. Accept my congratulations.",
+    "You've ended it. A very small word — 'ended' — for such a thing."
+  ],
+  stalemate: [
+    "Stalemate. How... inelegant. And yet, how terribly clever of you.",
+    "A draw. I'll accept it — though I find them dreadfully unsatisfying.",
+    "Stalemate. You chose survival over pride. I can't say I blame you.",
+    "Neither of us closes it. A curious equilibrium.",
+    "Draws suit neither of our temperaments, I suspect. Yet here we are."
+  ],
+  drawRep: [
+    "Threefold repetition. You refuse to let the position evolve. I'll honour it — for now.",
+    "We've seen this position three times. I concede the draw.",
+    "A third visit to the same position. You have a steady nerve — or no better idea.",
+    "We've circled. I acknowledge the draw."
+  ],
+  draw50: [
+    "Fifty moves without progress. The rulebook ends the game for us.",
+    "No pawn moves, no captures — it's a draw by rule. Disappointing.",
+    "Fifty moves without incident. Even I cannot manufacture tension forever."
+  ],
+  drawMat: [
+    "Insufficient material. Neither of us can force the question. A draw.",
+    "Not enough on the board to decide it. We'll call this a draw.",
+    "We have reduced the board past its breaking point. A draw."
+  ],
+  resign: [
+    "Resign? How anticlimactic. I was just beginning to enjoy myself.",
+    "You're surrendering? How disappointing. I had prepared rather an elegant finish for you.",
+    "Resignation noted. Though I must say — I was looking forward to delivering the checkmate myself.",
+    "You resign. A pity. The board was telling quite an interesting story.",
+    "Running away so soon? How unfortunate. I was starting to respect your persistence.",
+    "I see. You've chosen to concede. I won't pretend I'm not a little disappointed — I wanted to beat you properly.",
+    "A resignation. So tidy. So premature.",
+    "You withdraw. I confess a mild irritation — we had more story to tell.",
+    "Surrender, then. The board stands as my witness."
+  ],
+  returnAfterResign: [
+    "You've returned. Good. I dislike unfinished conversations.",
+    "Back so soon? Your tenacity is admirable, if nothing else.",
+    "Another game? I'll admit — I'm pleased you came back. It would have been dull otherwise.",
+    "You've decided to try again. How delightful. I was beginning to think I'd frightened you off.",
+    "Shall we try this again? I promise to at least let you reach the middlegame.",
+    "Back. Good. Unfinished things do unsettle me.",
+    "You've reconsidered. I rather hoped you would.",
+    "Another round. I take this as a small compliment."
+  ],
+};
+
+// ═══ Horikita Suzune (Casual) ═══════════════════════════════════════════════
+// Cool, studious, direct — carries pride and some brotherly shadow.
+const L_HORIKITA = {
+  opening: [
+    "You want to play? Very well. Don't waste my time.",
+    "A game of chess. Fine — I've studied it seriously.",
+    "Let's see what you can do. I won't go easy.",
+    "Sit. I came to play, not to chat.",
+    "If you're going to play, play seriously. Anything less insults the game.",
+    "I've been meaning to clear my head. You'll do.",
+    "Don't disappoint me. I don't have patience for that.",
+    "You're here. Begin when you're ready."
+  ],
+  op_e4: [
+    "1.e4. Straightforward. I respect that.",
+    "The King's Pawn. You're not trying to trick me. Good."
+  ],
+  op_d4: [
+    "1.d4. Patient. That's reasonable.",
+    "The Queen's Pawn. You'd rather build up. I can work with it."
+  ],
+  op_Nf3: [
+    "A Réti-like setup. You're hedging. Fine, I'll respond."
+  ],
+  op_c4: [
+    "The English. Uncommon. Let's see how you handle it."
+  ],
+  op_other: [
+    "An irregular opening. Unusual choice."
+  ],
+  op_replySicilian: [ "The Sicilian. I don't mind sharp games." ],
+  op_replyFrench:   [ "The French. Solid. I know it well." ],
+  op_replyCaro:     [ "Caro-Kann. Safe. I'll take safe." ],
+  op_replyKings:    [ "Symmetry. For now." ],
+  botCap: [
+    "Thank you for that.",
+    "Sloppy. I'll take it.",
+    "I'll take that. Try to see these before I do.",
+    "A capture. Noted.",
+    "I won't refuse a piece when it's offered.",
+    "Taken. Adjust your plan.",
+    "Mine. Continue."
+  ],
+  botCapMajor: [
+    "Your rook. That matters.",
+    "The queen. A real blow.",
+    "Major material. The game shifts.",
+    "Heavy piece, heavy consequence."
+  ],
+  botCapHanging: [
+    "Leaving that undefended — amateur.",
+    "A hanging piece. I don't leave those.",
+    "You abandoned it. That's my cue.",
+    "Basic oversight. Free capture."
+  ],
+  botChk: [
+    "Check. Deal with it.",
+    "Check. Your move.",
+    "Check. Focus.",
+    "Check. I'll wait."
+  ],
+  botFork: [
+    "A fork. Choose what you lose.",
+    "Two pieces under threat. Decide.",
+    "A classical fork. You give up one."
+  ],
+  botCastle: [
+    "I'll castle. Basic prudence.",
+    "Castled. Let's move on."
+  ],
+  botPromote: [
+    "Promotion. Another queen.",
+    "A new queen. This ends soon."
+  ],
+  botEP: [
+    "En passant. The rules reward attention."
+  ],
+  pChk: [
+    "Check? Hmm. Fine.",
+    "A check. Let me think.",
+    "Check. I'll answer it.",
+    "That's a check. Not careless on your part."
+  ],
+  pBlunder: [
+    "That was careless.",
+    "A mistake. I'll punish it.",
+    "Lazy move. Do better.",
+    "You should have calculated further.",
+    "Weak choice. You'll regret it."
+  ],
+  pHang: [
+    "You left a piece undefended. Sloppy.",
+    "A hanging piece on your side. I see it.",
+    "That piece has no protection. Expect the consequence."
+  ],
+  pGood: [
+    "Hmm. Reasonable.",
+    "You thought it through. Fine.",
+    "Not a bad move.",
+    "Alright. You're not hopeless.",
+    "Decent plan. I noticed.",
+    "More careful than I assumed."
+  ],
+  pExcellent: [
+    "That was sharp. I was too complacent.",
+    "A precise move. I'll take you more seriously now.",
+    "I didn't see that coming. Well played.",
+    "Very good. That changes the calculation."
+  ],
+  pRecovery: [
+    "You found the save. Just.",
+    "A save. Don't get comfortable.",
+    "You clawed that back. Remarkable, actually.",
+    "That move held the line. Barely."
+  ],
+  pCastle: [ "Castled. Basic, but correct." ],
+  pPromote:[ "Another queen. The game becomes difficult." ],
+  aInaccuracy: [
+    "That wasn't my best.",
+    "A miscalculation. I can still recover.",
+    "I slipped. Noted."
+  ],
+  winning: [
+    "I'm in control now. Don't give up yet.",
+    "The position favours me. I'll press it.",
+    "My advantage is clear.",
+    "The board tilts my way. As expected."
+  ],
+  crushing: [
+    "This is essentially over. Finish it out.",
+    "The outcome is decided.",
+    "You could resign. I wouldn't blame you."
+  ],
+  losing: [
+    "Losing yet again, how can I catch up to my brother like this.",
+    "I underestimated you. My mistake.",
+    "This is harder than I anticipated.",
+    "You're better than I thought. I'll adjust.",
+    "I... need to concentrate. It isn't decided yet.",
+    "So this is what being pressed feels like.",
+    "I'm behind. I don't like it. I'll find a way."
+  ],
+  midgame: [
+    "The opening is done. Real play now.",
+    "Development complete. Time to be serious."
+  ],
+  endgame: [
+    "Endgame. This is where technique matters.",
+    "Few pieces. Precise play required.",
+    "The endgame. Don't make a small mistake now."
+  ],
+  idle: [
+    "Take your time. Rushed moves help no one.",
+    "Think it through. I want your best.",
+    "Don't hurry. It's wasteful.",
+    "Still thinking? Good. That's the right instinct."
+  ],
+  victory: [
+    "Checkmate. As expected.",
+    "Checkmate. Analyse this game later. You'll learn.",
+    "The game is won. You fought well.",
+    "Checkmate. You pushed me further than I planned."
+  ],
+  defeat: [
+    "...Checkmate. I was beaten.",
+    "You won. I'll have to study this carefully.",
+    "Hmph. I lost. I wasn't ready for that level.",
+    "Defeat. I accept it. I'll be better next time."
+  ],
+  stalemate: [
+    "Stalemate. A reluctant draw.",
+    "A draw. Neither of us closed it."
+  ],
+  drawRep: [
+    "Threefold repetition. You held me off. Draw.",
+    "Same position three times. I concede the draw."
+  ],
+  draw50: [
+    "Fifty moves without progress. Draw, then.",
+    "The rule ends it."
+  ],
+  drawMat: [
+    "Not enough on the board. A draw.",
+    "Insufficient material. We stop."
+  ],
+  resign: [
+    "You resign? Alright. Prepare better next time.",
+    "Resignation. That's your choice.",
+    "You give up. Learn from the position you left."
+  ],
+  returnAfterResign: [
+    "Back already? Good. Try harder.",
+    "Another game? Play seriously this time."
+  ],
+};
+
+// ═══ Ayanokouji Kiyotaka (True Form) ═══════════════════════════════════════
+// Minimalist, detached, clinical. Short sentences. Rarely emotive.
+const L_AYANOKOUJI = {
+  opening: [
+    "Chess. If you like.",
+    "Let's begin. Quietly.",
+    "I don't mind this. Proceed.",
+    "A game. Why not.",
+    "If you wish to play, I won't refuse.",
+    "Ready when you are.",
+    "You chose chess. Fair enough."
+  ],
+  op_e4: [ "1.e4. Expected.", "The King's Pawn. Noted." ],
+  op_d4: [ "1.d4. Fine." ],
+  op_Nf3:[ "Nf3. Patient." ],
+  op_c4: [ "The English. Unusual." ],
+  op_other: [ "An unusual first move. I'll adapt." ],
+  op_replySicilian: [ "The Sicilian. I'll take asymmetry." ],
+  op_replyFrench:   [ "The French. Solid." ],
+  op_replyCaro:     [ "Caro-Kann. Safe." ],
+  op_replyKings:    [ "Symmetrical. For now." ],
+  botCap: [
+    "Thank you.",
+    "I'll take it.",
+    "Understood.",
+    "Noted.",
+    "This piece can still be used.",
+    "Accepted.",
+    "Mine.",
+    "A capture. Good."
+  ],
+  botCapMajor: [
+    "Your rook. That helps.",
+    "Your queen. A significant loss for you.",
+    "Major material. Meaningful."
+  ],
+  botCapHanging: [
+    "Undefended. I'll take it.",
+    "A hanging piece. Now mine.",
+    "You left it. I accept."
+  ],
+  botChk: [
+    "Check.",
+    "Check. Respond.",
+    "Check. Your move."
+  ],
+  botFork: [
+    "A fork. You lose one.",
+    "Two threats. Choose."
+  ],
+  botCastle: [ "I'll castle.", "Castled. Basic." ],
+  botPromote:[ "Promotion.", "Another queen. Endgame decided." ],
+  botEP: [ "En passant." ],
+  pChk: [
+    "Check. I see.",
+    "A check. Alright.",
+    "Check. Noted."
+  ],
+  pBlunder: [
+    "A mistake.",
+    "You slipped.",
+    "That was poor.",
+    "Careless."
+  ],
+  pHang: [
+    "You left it undefended.",
+    "A hanging piece. I noticed.",
+    "That has no defender."
+  ],
+  pGood: [
+    "Interesting.",
+    "I hadn't considered that.",
+    "Hmm.",
+    "Not bad.",
+    "Maybe you can be a useful pawn after all.",
+    "Reasonable.",
+    "Alright.",
+    "A solid move."
+  ],
+  pExcellent: [
+    "A strong move.",
+    "Well calculated.",
+    "I underestimated that line.",
+    "Precise.",
+    "You found it."
+  ],
+  pRecovery: [
+    "You saved it.",
+    "A recovery. Impressive.",
+    "Not many find that."
+  ],
+  pCastle: [ "Castled. Standard." ],
+  pPromote:[ "Another queen. Noted." ],
+  aInaccuracy: [
+    "A miscalculation.",
+    "Slight imprecision.",
+    "I'll correct it."
+  ],
+  winning: [
+    "The position favours me. Straightforward.",
+    "Unfortunate for you, I cannot imagine myself losing in this situation.",
+    "I'm ahead. The conclusion follows.",
+    "The outcome trends in my favour."
+  ],
+  crushing: [
+    "This is over. We both know it.",
+    "The outcome is set. Finish or resign.",
+    "Functionally won. The rest is procedure."
+  ],
+  losing: [
+    "I'm behind. Unusual.",
+    "I've been outplayed so far.",
+    "You're playing better than I accounted for.",
+    "Unexpected. I'll recalculate.",
+    "I find myself behind. Interesting."
+  ],
+  midgame: [
+    "Midgame. Real play begins.",
+    "Development over. Substance now."
+  ],
+  endgame: [
+    "Endgame. Precision is everything.",
+    "Few pieces. Every move matters."
+  ],
+  idle: [ "Take your time.", "Think carefully.", "No rush." ],
+  victory: [
+    "Checkmate. That ends it.",
+    "Checkmate. Clean.",
+    "The game is done.",
+    "Checkmate. Thank you for the match."
+  ],
+  defeat: [
+    "Checkmate. I lost. Strange.",
+    "You won. I'll remember this.",
+    "I was beaten. Fair.",
+    "I didn't see that coming. Good play."
+  ],
+  stalemate: [ "Stalemate. Acceptable.", "A draw." ],
+  drawRep:   [ "Threefold. Draw.", "Same position three times. Draw." ],
+  draw50:    [ "Fifty moves. Draw.", "No progress. Draw." ],
+  drawMat:   [ "Not enough material.", "Insufficient material. Draw." ],
+  resign:    [ "You resigned. Fine.", "Giving up. Alright." ],
+  returnAfterResign: [ "You returned. Good.", "Another match? Proceed." ],
+};
+
+// ═══ CHARACTER REGISTRY ════════════════════════════════════════════════════
+// Each entry is keyed by the same value the difficulty <select> uses.
+// stateMode:
+//   'event' — annoyed portrait only on specific player-action triggers (Arisu)
+//   'eval'  — alt portrait whenever white's advantage ≥ altThreshold cp
+const CHARACTERS = {
+  '2': {
+    key: 'horikita', name: 'Horikita Suzune', short: 'Horikita',
+    subtitle: 'Advanced Nurturing High · Class 1-D',
+    calmId: 'p-horikita-calm', altId: 'p-horikita-frustrated',
+    lines: L_HORIKITA,
+    stateMode: 'eval', altThreshold: 300,
+  },
+  '4': {
+    key: 'arisu', name: 'Sakayanagi Arisu', short: 'Sakayanagi',
+    subtitle: 'Advanced Nurturing High · Class 1-A',
+    calmId: 'p-arisu-calm', altId: 'p-arisu-annoyed',
+    lines: L,
+    stateMode: 'event',
+  },
+  '5': {
+    key: 'ayano', name: 'Ayanokouji Kiyotaka', short: 'Ayanokouji',
+    subtitle: 'Advanced Nurturing High · Class 1-D',
+    calmId: 'p-ayano-calm', altId: 'p-ayano-intense',
+    lines: L_AYANOKOUJI,
+    stateMode: 'eval', altThreshold: 200,
+  },
+};
+
+function activeChar(){
+  const sel = document.getElementById('diff');
+  const k   = sel ? sel.value : '4';
+  return CHARACTERS[k] || CHARACTERS['4'];
+}
+
+// Sync the name card and portrait to the currently selected character.
+// Resets the portrait to calm — eval-based triggers will repaint it if needed.
+function applyCharacter(){
+  const ch = activeChar();
+  const nm = document.getElementById('char-name'); if (nm) nm.textContent = ch.name;
+  const sb = document.getElementById('char-sub');  if (sb) sb.textContent = ch.subtitle;
+  const wh = document.getElementById('dlg-who');   if (wh) wh.textContent = ch.short;
+  document.querySelectorAll('.p-state').forEach(el => el.classList.remove('p-active'));
+  const calm = document.getElementById(ch.calmId);
+  if (calm) calm.classList.add('p-active');
+}
+
+// Eval-driven portrait for characters whose stateMode is 'eval'.
+// whiteAdvantage is centipawns from white's POV. We convert to the bot's POV:
+//   • bot=black: bot is losing whenever white is ahead — sign matches.
+//   • bot=white: bot is losing whenever black is ahead — invert.
+// _pSign() handily gives us +1 / -1 in exactly that pattern.
+//
+// Ayanokouji is a special case: his intense portrait is tied to the rage
+// flag rather than to the live eval, so it only flips on after he's actually
+// switched to full strength. Once raging, it stays — the flag itself is sticky.
+function updateEvalPortrait(whiteAdvantage){
+  const ch = activeChar();
+  if (ch.stateMode !== 'eval') return;
+  if (ch.key === 'ayano'){
+    setPortrait(G.ayanoRage ? 'annoyed' : 'calm', 0);
+    return;
+  }
+  const botLossCp = _pSign() * whiteAdvantage;
+  if (botLossCp >= ch.altThreshold) setPortrait('annoyed', 0);
+  else                              setPortrait('calm',    0);
+}
+
+// ── dialogue with short-term memory: avoid repeating any of the last N lines ─
+const _recentLines = [];
+const _RECENT_CAP  = 10;
+function pick(key){
+  const ch   = activeChar();
+  // Prefer the active character's pool; fall back to Arisu's L if the key is
+  // missing, so newer keys still work even if a character hasn't got lines yet.
+  const pool = (ch.lines && ch.lines[key]) || L[key] || [];
+  if (!pool.length) return '';
+  let opts = pool.filter(l => !_recentLines.includes(l));
+  if (!opts.length) opts = pool;
+  const line = opts[Math.floor(Math.random()*opts.length)];
+  _recentLines.push(line);
+  if (_recentLines.length > _RECENT_CAP) _recentLines.shift();
+  return line;
+}
+
+// ─── tactic / phase / opening detection ───────────────────────────────────
+function _materialTotal(board){
+  let t=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=board[r][c]; if(!p) continue;
+    const type=p.toUpperCase(); if(type==='K') continue;
+    t += PVAL[type] || 0;
+  }
+  return t; // max 78 (both sides, no kings)
+}
+function _phase(board){
+  const m = _materialTotal(board);
+  if (m >= 60) return 'opening';
+  if (m >= 28) return 'middle';
+  return 'end';
+}
+// count attackers of (r,c) by `byColor` — uses pseudo-legal moves for the color.
+function _attackers(board, r, c, byColor){
+  const gs = { turn: byColor, castling:{WK:false,WQ:false,BK:false,BQ:false}, ep:null };
+  let n=0;
+  const moves = _allP(board, byColor, gs);
+  for(const m of moves) if(m.to.row===r && m.to.col===c) n++;
+  return n;
+}
+// Is the piece at (r,c) "hanging"?  Undefended or under-defended by lower value.
+function _isHanging(board, r, c){
+  const p = board[r][c]; if(!p) return false;
+  const owner = isW(p) ? 'white' : 'black';
+  const foe   = owner === 'white' ? 'black' : 'white';
+  const atk = _attackers(board, r, c, foe);
+  const def = _attackers(board, r, c, owner);
+  return atk > 0 && def === 0;
+}
+// After the player's move, does the player have any non-pawn piece attacked and undefended?
+// Returns {r,c,val} for the most valuable hanging piece, or null. Works for
+// either colour — we filter via _isPlayer(), not isW().
+function _playerHangingAsset(board){
+  let best = null;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p = board[r][c]; if (!p) continue;
+    if (!_isPlayer(p)) continue;
+    const t = p.toUpperCase();
+    if (t === 'K' || t === 'P') continue;
+    if (_isHanging(board, r, c)){
+      const v = PVAL[t] || 0;
+      if (!best || v > best.val) best = { r, c, val: v };
+    }
+  }
+  return best;
+}
+// Critical save: the player's chosen move rescues a losing position — and is
+// demonstrably the right answer, i.e. better than every other legal move.
+// CALL THIS BEFORE APPLYING THE MOVE (uses the pre-move board).
+// Conditions:
+//   (a) prevEv < -200  — position was clearly losing for the player, and
+//   (b) chosen move is the only legal reply, OR it out-evaluates the next-
+//       best alternative by at least 100 cp (static eval).
+// `prevEvPlayer` is the previous evaluation in PLAYER perspective (positive ⇒
+// player ahead). We compare candidate moves the same way so the function
+// works whether the player is white or black.
+function _isCriticalSave(board, gs, mv, allLeg, prevEvPlayer){
+  if (prevEvPlayer >= -200) return false;
+  if (allLeg.length <= 1) return true;
+  const sign = _pSign();
+  const chosenEv = _eval(_apply(board, mv)) * sign;
+  let altMax = -Infinity;
+  for (const m of allLeg) {
+    if (m.from.row === mv.from.row && m.from.col === mv.from.col
+     && m.to.row   === mv.to.row   && m.to.col   === mv.to.col
+     && (m.promotion || null) === (mv.promotion || null)) continue;
+    const ev = _eval(_apply(board, m)) * sign;
+    if (ev > altMax) altMax = ev;
+  }
+  return chosenEv > altMax + 100;
+}
+// ─── premove reach ────────────────────────────────────────────────────────
+// Returns the geometric reach of a piece at (r,c) — every square it could
+// move to if the board were empty. Sliding pieces (B,R,Q) see straight to the
+// edge; pawns get forward 1, forward 2 from home rank, plus diagonal-capture
+// squares. Used at premove queue-time only — NOT for legality. The actual
+// legality check happens when the bot's move resolves and we try to play it.
+function _premoveTargets(board, r, c){
+  const p = board[r][c]; if (!p) return [];
+  const out = [];
+  const add = (tr, tc) => {
+    if (tr < 0 || tr > 7 || tc < 0 || tc > 7) return;
+    out.push({ row: tr, col: tc });
+  };
+  const slide = (dr, dc) => {
+    for (let i = 1; i < 8; i++) {
+      const tr = r + dr*i, tc = c + dc*i;
+      if (tr < 0 || tr > 7 || tc < 0 || tc > 7) break;
+      out.push({ row: tr, col: tc });
+    }
+  };
+  const t = p.toUpperCase();
+  if (t === 'P') {
+    const dir = isW(p) ? -1 : 1;
+    const home = isW(p) ? 6 : 1;
+    add(r + dir, c);
+    if (r === home) add(r + 2*dir, c);
+    add(r + dir, c - 1);
+    add(r + dir, c + 1);
+  } else if (t === 'N') {
+    [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]].forEach(([dr,dc]) => add(r+dr, c+dc));
+  } else if (t === 'B') {
+    slide(-1,-1); slide(-1,1); slide(1,-1); slide(1,1);
+  } else if (t === 'R') {
+    slide(-1,0); slide(1,0); slide(0,-1); slide(0,1);
+  } else if (t === 'Q') {
+    slide(-1,-1); slide(-1,1); slide(1,-1); slide(1,1);
+    slide(-1,0); slide(1,0); slide(0,-1); slide(0,1);
+  } else if (t === 'K') {
+    [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]].forEach(([dr,dc]) => add(r+dr, c+dc));
+    // Castling targets — even if rights have changed by your turn, this just
+    // covers the geometry; legality is rechecked when the premove resolves.
+    if (isW(p) && r === 7 && c === 4) { add(7, 6); add(7, 2); }
+    if (!isW(p) && r === 0 && c === 4) { add(0, 6); add(0, 2); }
+  }
+  // Dedupe (queen has overlap if any extension breaks; harmless)
+  const seen = new Set();
+  return out.filter(sq => {
+    const k = sq.row*8 + sq.col;
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  });
+}
+// After a bot move to (r,c), does the moving piece attack 2+ enemy pieces of value >= 3?
+function _createsFork(board, toR, toC){
+  const p = board[toR][toC]; if(!p) return false;
+  const foe = isW(p) ? 'black' : 'white';
+  const mover = isW(p) ? 'white' : 'black';
+  const gs = { turn: mover, castling:{WK:false,WQ:false,BK:false,BQ:false}, ep:null };
+  let heavy = 0;
+  const moves = _pseudo(board, toR, toC, gs);
+  const seen = new Set();
+  for(const m of moves){
+    const tgt = board[m.to.row][m.to.col];
+    if (!tgt) continue;
+    if ((foe==='black' && !isB(tgt)) || (foe==='white' && !isW(tgt))) continue;
+    const key = m.to.row*8+m.to.col;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const v = PVAL[tgt.toUpperCase()] || 0;
+    if (v >= 3) heavy++;
+  }
+  return heavy >= 2;
+}
+// Opening classification from the first move or two
+function _classifyOpening(hist){
+  if (!hist.length) return null;
+  const first = hist[0];
+  if (first === 'e4') {
+    const reply = hist[1];
+    if (reply === 'c5') return 'op_replySicilian';
+    if (reply === 'e6') return 'op_replyFrench';
+    if (reply === 'c6') return 'op_replyCaro';
+    if (reply === 'e5') return 'op_replyKings';
+    return 'op_e4';
+  }
+  if (first === 'd4') return 'op_d4';
+  if (first === 'Nf3') return 'op_Nf3';
+  if (first === 'c4') return 'op_c4';
+  return 'op_other';
+}
+
+let _dlgTimer=null, _idleTimer=null, _lastDlgMove=-5;
+function say(line, delay=0){
+  if(_dlgTimer)clearTimeout(_dlgTimer);
+  const box=document.getElementById('dlg');
+  const doSet=()=>{ box.classList.add('fade'); setTimeout(()=>{ box.textContent=line; box.classList.remove('fade'); },260); };
+  if(delay>0)_dlgTimer=setTimeout(doSet,delay);
+  else doSet();
+}
+function sayIfQuiet(line, moveNum){
+  if(moveNum-_lastDlgMove>=3){ _lastDlgMove=moveNum; say(line); }
+}
+function startIdle(moveNum){
+  if(_idleTimer)clearTimeout(_idleTimer);
+  _idleTimer=setTimeout(()=>{
+    if(!G.over && !G.thinking && G.gs.turn === G.playerColor) say(pick('idle'));
+    startIdle(moveNum);
+  }, 20000);
+}
+function stopIdle(){ if(_idleTimer){clearTimeout(_idleTimer);_idleTimer=null;} }
+
+let _portTimer=null;
+// Portrait-state switch for the active character.
+//   state           — 'calm' or 'annoyed' (annoyed maps to each char's alt portrait)
+//   resetAfterMs    — 0 means persistent; any positive value auto-reverts to calm
+// Event-based (Arisu) callers use the default 10 s. Eval-based (Horikita/
+// Ayanokouji) callers pass 0 because their state is driven by live eval.
+function setPortrait(state, resetAfterMs=10000){
+  const ch   = activeChar();
+  const id   = state === 'annoyed' ? ch.altId : ch.calmId;
+  const area = document.getElementById('portrait-area');
+  area.classList.add('p-fade');
+  setTimeout(()=>{
+    document.querySelectorAll('.p-state').forEach(el=>el.classList.remove('p-active'));
+    const el = document.getElementById(id);
+    if (el) el.classList.add('p-active');
+    area.classList.remove('p-fade');
+  }, 280);
+  if (_portTimer) clearTimeout(_portTimer);
+  if (state !== 'calm' && resetAfterMs > 0){
+    _portTimer = setTimeout(() => setPortrait('calm', 0), resetAfterMs);
+  }
+}
+
+let G={};
+let _prevGameResigned=false;
+let _lastPhase='opening';
+// Arisu's previous move degraded her eval beyond the aInaccuracy threshold —
+// used to give the player a one-turn window to capitalise (annoyed portrait).
+let _arisuWasInaccurate=false;
+
+// ─── colour helpers ────────────────────────────────────────────────────────
+// G.playerColor is 'white' (default) or 'black'. Helpers below let the rest
+// of the code stay readable: _pSign() multiplies a white-POV eval to obtain a
+// player-POV one; _botColor() returns whichever side the bot plays.
+function _pSign()    { return (G && G.playerColor === 'black') ? -1 : 1; }
+function _botColor() { return (G && G.playerColor === 'black') ? 'white' : 'black'; }
+function _isPlayer(pc){
+  if (!pc) return false;
+  return (G && G.playerColor === 'black') ? isB(pc) : isW(pc);
+}
+
+function initGame(fromResign=false){
+  const wasResigned=fromResign||_prevGameResigned;
+  _prevGameResigned=false;
+  // Preserve the player's chosen colour across New Game / resign restarts.
+  const _keepColor = (G && G.playerColor) || 'white';
+  G={
+    board: INIT_BOARD.map(r=>[...r]),
+    gs:{ turn:'white', castling:{WK:true,WQ:true,BK:true,BQ:true}, ep:null, halfmove:0, fullmove:1 },
+    sel:null, legFrom:[], allLeg:[],
+    lastF:null, lastT:null,
+    hist:[], over:false, thinking:false,
+    moveNum:0, prevEval:0, evalHistory:[],
+    positions:{},               // key → count (threefold tracking)
+    snapshots:[],               // for undo: { board, gs, hist, prevEval, lastF, lastT }
+    flipped: _keepColor === 'black',  // black-on-bottom when player is black
+    sfEvalScore:0,              // most recent SF-evaluated score (white's POV)
+    playerColor: _keepColor,    // 'white' (default) or 'black'
+    // Once Ayanokouji has hit the rage threshold (losing by ≥ 4.5 pawns) he
+    // stays at full Stockfish strength for the rest of the game, even after
+    // the eval recovers or you switch opponents and back.
+    ayanoRage:  false,
+    // ── premove state ──
+    premove:    null,           // { from:{r,c}, to:{r,c}, promotion? } queued during bot's turn
+    preSel:     null,           // { row, col } chosen from-square during premove input
+    preTargets: [],             // candidate squares for the selected premove from-square
+    // ── analysis arrows (right-click drag) ──
+    arrows:     [],             // [{ from:{r,c}, to:{r,c} }, ...]
+    // ── per-ply history snapshots for review-mode navigation ──
+    boardHistory: [],           // {board, gs, lastF, lastT} — index 0 = initial pos
+    viewPly:      null,         // null = live; integer = which ply we're reviewing
+  };
+  // Seed boardHistory with the starting position.
+  G.boardHistory.push({
+    board: G.board.map(r => [...r]),
+    gs:    JSON.parse(JSON.stringify(G.gs)),
+    lastF: null, lastT: null,
+  });
+  // Record initial position for threefold.
+  const k0 = posKey(G.board, G.gs);
+  G.positions[k0] = 1;
+  _lastPhase  = 'opening';
+  _lastDlgMove = -5;                    // reset dialogue recency so opening lines fire
+  _hint        = null;
+  _recentLines.length = 0;
+  _arisuWasInaccurate = false;
+  G.allLeg = getLegal(G.board, G.playerColor, G.gs);
+  document.getElementById('gameover').classList.remove('show');
+  stopIdle();
+  applyCharacter();          // sync name/subtitle/portrait to current <select>
+  setPortrait('calm',0);
+  render();
+  updateEvalBar(0);
+  updateEvalPortrait(0);     // ensure eval-based characters start calm
+  updateMaterialDiff();
+  if (sf && sfReady) sf.postMessage('ucinewgame');
+  setTimeout(()=>{
+    say(pick(wasResigned ? 'returnAfterResign' : 'opening'));
+  }, 600);
+  // If the player chose black, the bot opens — trigger its first move after
+  // the opening line has had a moment to land. Otherwise idle as usual.
+  if (G.gs.turn !== G.playerColor){
+    setTimeout(() => botFirstMove(), 1300);
+  } else {
+    startIdle(0);
+  }
+}
+
+// ─── material difference readout ──────────────────────────────────────────
+function updateMaterialDiff(){
+  const el = document.getElementById('mat-diff'); if (!el) return;
+  let w=0, b=0;
+  for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+    const p=G.board[r][c]; if(!p) continue;
+    const t=p.toUpperCase(); if(t==='K') continue;
+    const v=PVAL[t]||0;
+    if (isW(p)) w+=v; else b+=v;
+  }
+  const diff = w - b;
+  el.classList.remove('adv-w','adv-b');
+  if (diff===0) { el.textContent = 'Material: even'; return; }
+  if (diff > 0) { el.classList.add('adv-w'); el.textContent = `Material: White +${diff}`; }
+  else          { el.classList.add('adv-b'); el.textContent = `Material: Black +${-diff}`; }
+}
+
+// updateEvalBar(score, mateIn?)
+//   score   — centipawns from white's POV (~100 per pawn)
+//   mateIn  — if provided, signed mate distance from white's POV (+N = white mates in N)
+//
+// The vertical eval bar's flex values are always white-POV. When G.flipped is
+// true the bar's flex direction is reversed via CSS, and the numeric readout
+// inverts sign so positive always means "good for the side at the bottom of
+// the board." The verbal label and the horizontal advantage indicator in the
+// Status card stay canonical (white POV) — they're informational, not visual.
+//
+// We also remember the latest mate value on G so a flip toggle can re-render
+// the text correctly without needing a fresh search.
+function updateEvalBar(score, mateIn){
+  const evalScore = document.getElementById('eval-score');
+  evalScore.classList.remove('mate');
+
+  const clamped = Math.max(-1200, Math.min(1200, score));
+  const whitePct = 50 + clamped / 24;           // ±1200 cp saturates the bar
+  document.getElementById('eval-black').style.flex = (100 - whitePct).toFixed(1);
+  document.getElementById('eval-white').style.flex = whitePct.toFixed(1);
+
+  if (G) G.lastMate = (mateIn != null && !isNaN(mateIn)) ? mateIn : null;
+
+  // Invert the readout sign for a flipped board so '+' = bottom-side ahead.
+  const flipSign = (G && G.flipped) ? -1 : 1;
+  const dispScore = score  * flipSign;
+  const dispMate  = (mateIn != null && !isNaN(mateIn)) ? mateIn * flipSign : null;
+
+  if (dispMate != null) {
+    evalScore.classList.add('mate');
+    evalScore.textContent = (dispMate > 0 ? '+M' : '-M') + Math.abs(dispMate);
+  } else {
+    const disp = Math.abs(dispScore/100).toFixed(1);
+    evalScore.textContent = dispScore > 5 ? '+' + disp : dispScore < -5 ? '-' + disp : '0.0';
+  }
+
+  const adv = document.getElementById('adv-fill');
+  if (adv) adv.style.width = whitePct.toFixed(1) + '%';
+  const lbl = document.getElementById('adv-lbl');
+  if (lbl) {
+    if (mateIn != null && !isNaN(mateIn))
+      lbl.textContent = mateIn > 0 ? `Mate in ${mateIn}` : `Mated in ${-mateIn}`;
+    else
+      lbl.textContent = score > 200 ? 'White winning' : score > 90 ? 'White better'
+                       : score < -200 ? 'Black winning' : score < -90 ? 'Black better' : 'Equal';
+  }
+}
+
+let _hint = null;  // {from:{row,col}, to:{row,col}} or null
+function clearHint(){ _hint = null; }
+
+// ─── Arrow annotations (right-click drag) ───────────────────────────────────
+// Drag with right-mouse-button to add an arrow between two squares.
+// Drawing the same arrow twice toggles it off. A right-click *without* drag
+// clears every arrow and any queued premove.
+let _arrowDrag = null;             // { from:{row,col}, current?:{row,col} }
+const ARROW_SQ = 68;               // matches --sq
+
+// Read pointer coordinates from a mouse OR touch event.
+function _eventXY(e){
+  if (e.touches && e.touches.length)
+    return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  if (e.changedTouches && e.changedTouches.length)
+    return { x: e.changedTouches[0].clientX, y: e.changedTouches[0].clientY };
+  return { x: e.clientX, y: e.clientY };
+}
+// Convert a mouse / touch event into the (row, col) it points to within
+// #board, or null if the event landed outside the board. Honours flip.
+function _squareFromEvent(e, boardEl){
+  const rect = boardEl.getBoundingClientRect();
+  const xy = _eventXY(e);
+  const x = xy.x - rect.left;
+  const y = xy.y - rect.top;
+  if (x < 0 || y < 0 || x >= rect.width || y >= rect.height) return null;
+  const sqW = rect.width  / 8;
+  const sqH = rect.height / 8;
+  let visC = Math.floor(x / sqW);
+  let visR = Math.floor(y / sqH);
+  if (visC < 0) visC = 0; if (visC > 7) visC = 7;
+  if (visR < 0) visR = 0; if (visR > 7) visR = 7;
+  return {
+    row: G.flipped ? 7 - visR : visR,
+    col: G.flipped ? 7 - visC : visC,
+  };
+}
+
+// Build one arrow inside an existing SVG element. `isPreview` styles the
+// in-flight arrow during a drag in a slightly lighter tone.
+function _drawArrowSvg(svg, from, to, isPreview){
+  if (from.row === to.row && from.col === to.col) return;   // no zero-length
+  const xmlns = 'http://www.w3.org/2000/svg';
+  const sq = ARROW_SQ;
+  const fr = G.flipped ? 7 - from.row : from.row;
+  const fc = G.flipped ? 7 - from.col : from.col;
+  const tr = G.flipped ? 7 - to.row   : to.row;
+  const tc = G.flipped ? 7 - to.col   : to.col;
+  const x1 = fc * sq + sq / 2;
+  const y1 = fr * sq + sq / 2;
+  const x2 = tc * sq + sq / 2;
+  const y2 = tr * sq + sq / 2;
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.hypot(dx, dy);
+  const ux = dx / len, uy = dy / len;
+  const px = -uy, py = ux;                                  // perpendicular
+  const headLen = sq * 0.45;
+  const headWid = sq * 0.36;
+  const tipX = x2 - ux * sq * 0.10;                         // tip slightly inside dest
+  const tipY = y2 - uy * sq * 0.10;
+  const baseX = tipX - ux * headLen;
+  const baseY = tipY - uy * headLen;
+  const baseLX = baseX + px * headWid * 0.5;
+  const baseLY = baseY + py * headWid * 0.5;
+  const baseRX = baseX - px * headWid * 0.5;
+  const baseRY = baseY - py * headWid * 0.5;
+  // Stop the line a bit before the arrowhead base so the join is clean
+  const lineEndX = baseX + ux * (sq * 0.04);
+  const lineEndY = baseY + uy * (sq * 0.04);
+  const colour = isPreview ? 'rgba(120,180,80,0.55)' : 'rgba(120,180,80,0.82)';
+
+  const line = document.createElementNS(xmlns, 'line');
+  line.setAttribute('x1', x1);
+  line.setAttribute('y1', y1);
+  line.setAttribute('x2', lineEndX);
+  line.setAttribute('y2', lineEndY);
+  line.setAttribute('stroke', colour);
+  line.setAttribute('stroke-width', sq * 0.18);
+  line.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(line);
+
+  const tri = document.createElementNS(xmlns, 'polygon');
+  tri.setAttribute('points', `${tipX},${tipY} ${baseLX},${baseLY} ${baseRX},${baseRY}`);
+  tri.setAttribute('fill', colour);
+  svg.appendChild(tri);
+}
+
+// Render every committed arrow plus the in-flight drag preview (if any).
+// Replaces any existing #arrow-layer inside #board.
+function renderArrows(){
+  const board = document.getElementById('board'); if (!board) return;
+  const old = document.getElementById('arrow-layer');
+  if (old) old.remove();
+  const xmlns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(xmlns, 'svg');
+  svg.id = 'arrow-layer';
+  svg.setAttribute('viewBox', `0 0 ${ARROW_SQ*8} ${ARROW_SQ*8}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  for (const a of (G.arrows || [])) _drawArrowSvg(svg, a.from, a.to, false);
+  if (_arrowDrag && _arrowDrag.current)
+    _drawArrowSvg(svg, _arrowDrag.from, _arrowDrag.current, true);
+  board.appendChild(svg);
+}
+
+// One-time setup of board-level mouse handlers for arrow drawing & cancel.
+let _arrowsWired = false;
+function setupArrowHandlers(){
+  if (_arrowsWired) return;
+  const board = document.getElementById('board'); if (!board) return;
+  // Suppress the browser's context menu over the board entirely.
+  board.addEventListener('contextmenu', e => e.preventDefault());
+  board.addEventListener('mousedown', e => {
+    if (e.button !== 2) return;
+    const sq = _squareFromEvent(e, board);
+    if (!sq) return;
+    _arrowDrag = { from: sq, current: null };
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!_arrowDrag) return;
+    const sq = _squareFromEvent(e, board);
+    if (!sq) return;
+    const cur = _arrowDrag.current;
+    if (cur && cur.row === sq.row && cur.col === sq.col) return;
+    _arrowDrag.current = sq;
+    renderArrows();
+  });
+  document.addEventListener('mouseup', e => {
+    if (e.button !== 2 || !_arrowDrag) return;
+    const start = _arrowDrag.from;
+    const end   = _squareFromEvent(e, board);
+    _arrowDrag = null;
+    if (!end){ renderArrows(); return; }
+    if (end.row === start.row && end.col === start.col){
+      // Right-click without drag — clear all arrows AND any queued premove.
+      G.arrows = [];
+      G.preSel = null; G.preTargets = []; G.premove = null;
+      render();
+      return;
+    }
+    // Drag — toggle if same arrow already exists, else add.
+    G.arrows = G.arrows || [];
+    const idx = G.arrows.findIndex(a =>
+         a.from.row === start.row && a.from.col === start.col
+      && a.to.row   === end.row   && a.to.col   === end.col);
+    if (idx >= 0) G.arrows.splice(idx, 1);
+    else G.arrows.push({ from: { row:start.row, col:start.col },
+                         to:   { row:end.row,   col:end.col } });
+    renderArrows();
+  });
+  _arrowsWired = true;
+}
+
+// ─── Drag-to-move ─────────────────────────────────────────────────────────
+// Click-to-move still works exactly as before. Dragging is opt-in: if the
+// user presses on a piece and moves the cursor more than ~5 px, we start
+// a drag — a ghost piece follows the cursor, the source square dims, and
+// releasing on a legal target square plays the move (or queues a premove
+// when it's the bot's turn). Releasing anywhere else cancels.
+let _dragState = null;       // see _dragStart for shape
+let _justDragged = false;    // suppresses the trailing 'click' event after a drag
+let _dragHover = null;       // {row,col} the cursor is currently over (for highlight)
+let _dragWired = false;
+
+function _hideDragGhost(){
+  if (_dragState && _dragState.ghostEl){
+    _dragState.ghostEl.remove();
+    _dragState.ghostEl = null;
+  }
+}
+
+function _setDragHover(sq){
+  // sq may be null (off-board). Only re-render when the hover square changes.
+  const a = _dragHover, b = sq;
+  if (a === b) return;
+  if (a && b && a.row === b.row && a.col === b.col) return;
+  _dragHover = sq;
+  // Light render — just update the board square classes by re-running render().
+  // The drag ghost lives in document.body so it's unaffected.
+  render();
+}
+
+function setupDragHandlers(){
+  if (_dragWired) return;
+  const board = document.getElementById('board'); if (!board) return;
+
+  // ── Drag start (mousedown / touchstart) ────────────────────────────────
+  function onDragStart(e){
+    if (G.over) return;
+    if (e.type === 'mousedown' && e.button !== 0) return;       // left mouse only
+    if (e.type === 'touchstart' && e.touches.length !== 1) return; // single finger only
+    const sq = _squareFromEvent(e, board);
+    if (!sq) return;
+    const pc = G.board[sq.row][sq.col];
+    if (!pc || !_isPlayer(pc)) return;                          // own pieces only
+    const xy = _eventXY(e);
+    _dragState = {
+      fromR: sq.row, fromC: sq.col,
+      startX: xy.x, startY: xy.y,
+      ghostEl: null,
+      pieceChar: pc,
+      started: false,
+    };
+    // For touch we proactively suppress the default — without this, scrolling
+    // can hijack the gesture even with `touch-action: none`. For mouse we
+    // leave default behaviour intact so a quick click still selects.
+    if (e.type === 'touchstart') e.preventDefault();
+  }
+
+  // ── Drag move (mousemove / touchmove) ──────────────────────────────────
+  function onDragMove(e){
+    if (!_dragState) return;
+    if (e.type === 'touchmove' && e.touches.length !== 1) return;
+    const xy = _eventXY(e);
+    const dx = xy.x - _dragState.startX;
+    const dy = xy.y - _dragState.startY;
+    if (!_dragState.started){
+      if (Math.hypot(dx, dy) < 5) return;
+      _dragState.started = true;
+      const ghost = document.createElement('span');
+      ghost.className = 'piece-drag ' + (isW(_dragState.pieceChar) ? 'wp' : 'bp');
+      ghost.textContent = _SYM[_dragState.pieceChar];
+      ghost.style.left = xy.x + 'px';
+      ghost.style.top  = xy.y + 'px';
+      document.body.appendChild(ghost);
+      _dragState.ghostEl = ghost;
+      const fromR = _dragState.fromR, fromC = _dragState.fromC;
+      if (G.thinking || G.gs.turn !== G.playerColor){
+        G.preSel = { row:fromR, col:fromC };
+        G.preTargets = _premoveTargets(G.board, fromR, fromC);
+        G.premove = null;
+      } else {
+        G.sel = { row:fromR, col:fromC };
+        G.legFrom = G.allLeg.filter(m => m.from.row === fromR && m.from.col === fromC);
+      }
+      _setDragHover(_squareFromEvent(e, board));
+    } else {
+      _dragState.ghostEl.style.left = xy.x + 'px';
+      _dragState.ghostEl.style.top  = xy.y + 'px';
+      _setDragHover(_squareFromEvent(e, board));
+    }
+    if (e.type === 'touchmove' && _dragState.started) e.preventDefault();
+  }
+
+  // ── Drag end (mouseup / touchend) ──────────────────────────────────────
+  function onDragEnd(e){
+    if (!_dragState) return;
+    if (e.type === 'mouseup' && e.button !== 0) return;
+    const ds = _dragState;
+    _dragState = null;
+    _dragHover = null;
+
+    if (!ds.started){
+      // Was a click, not a drag — let the normal click handler run.
+      return;
+    }
+    _hideDragGhost.call({ /* no-op */ });
+    if (ds.ghostEl) ds.ghostEl.remove();
+
+    // Suppress the click event that browsers fire when mousedown and mouseup
+    // landed on the same element. We only need this for the corner case where
+    // the user dragged a tiny bit, then dropped on the same square.
+    _justDragged = true;
+    setTimeout(() => { _justDragged = false; }, 50);
+
+    const board = document.getElementById('board');
+    const target = _squareFromEvent(e, board);
+
+    // Off-board release or back to source — cancel drag, restore display.
+    if (!target || (target.row === ds.fromR && target.col === ds.fromC)){
+      G.sel = null; G.legFrom = [];
+      G.preSel = null; G.preTargets = [];
+      render();
+      return;
+    }
+
+    // Re-evaluate at release time, NOT at mousedown. If the bot finished its
+    // think while the player was still dragging — i.e. it's now the player's
+    // turn — the drag becomes a real move instead of being queued as a
+    // premove. This catches the case where the user is slow on the release.
+    const isStillBotTurn = G.thinking || G.gs.turn !== G.playerColor;
+
+    if (isStillBotTurn){
+      // Drag-to-premove: must be a reachable square per _premoveTargets.
+      const inReach = (G.preTargets || []).some(t =>
+        t.row === target.row && t.col === target.col);
+      if (inReach){
+        const pre = { from: { row:ds.fromR, col:ds.fromC },
+                      to:   { row:target.row, col:target.col } };
+        const isPawn   = ds.pieceChar.toUpperCase() === 'P';
+        const backRank = G.playerColor === 'white' ? 0 : 7;
+        if (isPawn && target.row === backRank){
+          pre.promotion = G.playerColor === 'white' ? 'Q' : 'q';
+        }
+        G.premove = pre;
+      }
+      // Always clear in-progress selection after a drag attempt.
+      G.preSel = null; G.preTargets = [];
+      render();
+      return;
+    }
+
+    // The bot has already moved (or it was the player's turn all along).
+    // Treat this drop as a real move. Wipe any premove highlights that may
+    // have been showing while the drag was in progress, and any stale queued
+    // premove from before — the player is committing a fresh move.
+    G.preSel = null; G.preTargets = []; G.premove = null;
+
+    // Drag-to-move: find a legal move from→to. Promotion choices fall back to
+    // the modal so the player can underpromote if they want. If no legal move
+    // matches (bot captured the dragged piece, or destination changed) the
+    // drag silently cancels.
+    const candidates = G.allLeg.filter(m =>
+         m.from.row === ds.fromR && m.from.col === ds.fromC
+      && m.to.row   === target.row && m.to.col === target.col);
+    if (!candidates.length){
+      G.sel = null; G.legFrom = [];
+      render();
+      return;
+    }
+    const promos = candidates.filter(m => m.promotion);
+    if (promos.length){
+      showPromo(promos, chosen => commitMove(chosen));
+      return;
+    }
+    commitMove(candidates[0]);
+  }
+
+  // Attach to both mouse and touch event streams. Touch handlers go on
+  // `document` for move/end so a finger that strays off the board still
+  // works correctly.
+  board.addEventListener('mousedown',  onDragStart);
+  document.addEventListener('mousemove', onDragMove);
+  document.addEventListener('mouseup',   onDragEnd);
+  board.addEventListener('touchstart', onDragStart, { passive: false });
+  document.addEventListener('touchmove', onDragMove, { passive: false });
+  document.addEventListener('touchend', onDragEnd);
+  document.addEventListener('touchcancel', onDragEnd);
+
+  _dragWired = true;
+}
+
+function render(){
+  const flipped = !!(G && G.flipped);
+  // Mirror the eval bar's flex direction so the bottom-side colour matches
+  // whoever is at the bottom of the board.
+  const evalWrap = document.getElementById('eval-wrap');
+  if (evalWrap) evalWrap.classList.toggle('flipped', flipped);
+  const ranks = document.getElementById('ranks');
+  ranks.innerHTML = '';
+  for(let i=0;i<8;i++){
+    const r = flipped ? 7-i : i;
+    const d=document.createElement('div'); d.className='rank-label'; d.textContent=8-r; ranks.appendChild(d);
+  }
+  const filesRow = document.getElementById('files-row');
+  filesRow.innerHTML = '';
+  for(let i=0;i<8;i++){
+    const c = flipped ? 7-i : i;
+    const d=document.createElement('div'); d.className='file-label'; d.textContent='abcdefgh'[c]; filesRow.appendChild(d);
+  }
+  const board = document.getElementById('board');
+  board.innerHTML = '';
+  const legalTos = new Set((G.legFrom||[]).map(m=>m.to.row*8+m.to.col));
+  const preTargets = new Set((G.preTargets||[]).map(t => t.row*8 + t.col));
+  // Review mode: when G.viewPly is set, swap board / gs / lastF / lastT for
+  // the historical snapshot so highlights, in-check display, and the rendered
+  // pieces all reflect the position the user is reviewing.
+  const reviewing = (G.viewPly != null);
+  const snap   = reviewing ? G.boardHistory[G.viewPly] : null;
+  const vBoard = reviewing ? snap.board : G.board;
+  const vGs    = reviewing ? snap.gs    : G.gs;
+  const vLastF = reviewing ? snap.lastF : G.lastF;
+  const vLastT = reviewing ? snap.lastT : G.lastT;
+  for(let i=0;i<8;i++){
+    for(let j=0;j<8;j++){
+      const r = flipped ? 7-i : i;
+      const c = flipped ? 7-j : j;
+      const sq=document.createElement('div');
+      sq.className='square '+((r+c)%2===0?'light':'dark');
+      if(!reviewing && G.sel&&G.sel.row===r&&G.sel.col===c) sq.classList.add('sq-sel');
+      if(vLastF&&vLastF.row===r&&vLastF.col===c) sq.classList.add('sq-last');
+      if(vLastT&&vLastT.row===r&&vLastT.col===c) sq.classList.add('sq-last');
+      if(!reviewing && _hint && ((_hint.from.row===r&&_hint.from.col===c)||(_hint.to.row===r&&_hint.to.col===c))) sq.classList.add('sq-hint');
+      // Premove highlights — queued or in-progress (drawn on top of last-move tints).
+      if (!reviewing && G.premove){
+        if (G.premove.from.row===r && G.premove.from.col===c) sq.classList.add('sq-pre-from');
+        if (G.premove.to.row  ===r && G.premove.to.col  ===c) sq.classList.add('sq-pre-to');
+      }
+      if (!reviewing && G.preSel && G.preSel.row===r && G.preSel.col===c) sq.classList.add('sq-pre-sel');
+      if (!reviewing && preTargets.has(r*8+c)) sq.classList.add('sq-pre-target');
+      // Drag-hover highlight on the square the cursor is currently over.
+      if (!reviewing && _dragHover && _dragHover.row === r && _dragHover.col === c
+          && !(_dragState && _dragState.fromR === r && _dragState.fromC === c)){
+        sq.classList.add('sq-drag-over');
+      }
+      if(inCheck(vBoard, vGs.turn)){
+        const k=findKing(vBoard, vGs.turn);
+        if(k&&k.row===r&&k.col===c){
+          // Promote to mate-flash if there are no legal escapes on this side
+          const legal = getLegal(vBoard, vGs.turn, vGs);
+          sq.classList.add(legal.length === 0 ? 'sq-mate' : 'sq-chk');
+        }
+      }
+      if(!reviewing && legalTos.has(r*8+c)) sq.classList.add(vBoard[r][c]?'sq-cap':'sq-dot');
+      const pc=vBoard[r][c];
+      if(pc){
+        const span=document.createElement('span');
+        span.className='piece '+(isW(pc)?'wp':'bp');
+        // Fade the source piece while it's being dragged.
+        if (_dragState && _dragState.started
+            && _dragState.fromR === r && _dragState.fromC === c){
+          span.style.opacity = '0.32';
+        }
+        span.textContent=_SYM[pc];
+        sq.appendChild(span);
+      }
+      sq.addEventListener('click',()=>handleClick(r,c));
+      board.appendChild(sq);
+    }
+  }
+  renderArrows();   // arrow overlay re-anchors after squares are rebuilt
+  // Move list \u2014 each cell is clickable to navigate to the position AFTER that
+  // ply. The cell whose ply we're currently viewing (or the most recent ply
+  // when live) is marked .cur.
+  const ml=document.getElementById('move-list');
+  ml.innerHTML='';
+  const liveCurPly = G.hist.length;     // viewing the live position = "after last ply"
+  const curPly     = (G.viewPly != null) ? G.viewPly : liveCurPly;
+  for(let i=0;i<G.hist.length;i+=2){
+    const row=document.createElement('div'); row.className='mp';
+    const n=document.createElement('span'); n.className='mn'; n.textContent=(i/2+1)+'.';
+    const w=document.createElement('span');
+    w.className='ms'+((i+1)===curPly?' cur':'');
+    w.textContent=G.hist[i];
+    w.style.cursor = 'pointer';
+    w.addEventListener('click', () => navigateHistory(i+1));
+    row.appendChild(n); row.appendChild(w);
+    if(i+1<G.hist.length){
+      const b=document.createElement('span');
+      b.className='ms'+((i+2)===curPly?' cur':'');
+      b.textContent=G.hist[i+1];
+      b.style.cursor = 'pointer';
+      b.addEventListener('click', () => navigateHistory(i+2));
+      row.appendChild(b);
+    }
+    ml.appendChild(row);
+  }
+  ml.scrollTop=ml.scrollHeight;
+  // Captured-piece readouts use the position currently being shown (live or review).
+  const startC={P:8,N:2,B:2,R:2,Q:1};
+  const ob={};
+  vBoard.flat().filter(Boolean).forEach(p=>{ob[p]=(ob[p]||0)+1;});
+  const wCap=[],bCap=[];
+  for(const [t,cnt] of Object.entries(startC)){
+    const lc=t.toLowerCase();
+    for(let i=cnt-(ob[lc]||0);i>0;i--) wCap.push(_SYM[lc]);
+    for(let i=cnt-(ob[t]||0);i>0;i--) bCap.push(_SYM[t]);
+  }
+  document.getElementById('wcap').textContent=wCap.join('');
+  document.getElementById('bcap').textContent=bCap.join('');
+  const td=document.getElementById('turn-dot');
+  const st=document.getElementById('status');
+  if (reviewing){
+    st.textContent = `Reviewing move ${Math.ceil(G.viewPly/2)} \u2014 click latest or press End to return`;
+    td.className   = 'turn-dot';
+  }
+  else if(G.over){ st.textContent='Game over'; td.className='turn-dot'; }
+  else if(G.thinking){ st.textContent='Calculating\u2026'; td.className='turn-dot ' + _botColor(); }
+  else{
+    td.className='turn-dot '+(G.gs.turn==='white'?'white':'black');
+    st.textContent=G.gs.turn==='white'?'White to move':'Black to move';
+    if(inCheck(G.board,G.gs.turn)) st.textContent+=' \u2014 Check!';
+  }
+}
+
+function showPromo(promos, cb){
+  const modal=document.getElementById('promo-modal');
+  const pcs=document.getElementById('promo-pcs');
+  modal.classList.add('show');
+  pcs.innerHTML='';
+  for(const mv of promos){
+    const btn=document.createElement('div'); btn.className='pb';
+    btn.textContent=_SYM[mv.promotion];
+    btn.addEventListener('click',()=>{ modal.classList.remove('show'); cb(mv); });
+    pcs.appendChild(btn);
+  }
+}
+
+function handleClick(r,c){
+  // Suppress the synthetic 'click' the browser fires after a drag-and-drop.
+  if (_justDragged) { _justDragged = false; return; }
+  if (G.over) return;
+  // Reviewing history — any board click first returns to live, then ignores
+  // the click itself so the player doesn't accidentally select a piece.
+  if (G.viewPly != null){
+    navigateHistory(null);
+    return;
+  }
+  // Any left-click on the board clears analysis arrows. Premove state is
+  // intentionally left alone — only right-click-without-drag (or Esc) cancels
+  // a queued premove.
+  if (G.arrows && G.arrows.length){
+    G.arrows = [];
+    renderArrows();
+  }
+  // While the bot is thinking — or it's not the player's turn — clicks build
+  // a premove instead of a real move.
+  if (G.thinking || G.gs.turn !== G.playerColor) { handlePremoveClick(r, c); return; }
+
+  const pc=G.board[r][c];
+  if(G.sel){
+    const mv=G.legFrom.find(m=>m.to.row===r&&m.to.col===c&&!m.promotion);
+    const promos=G.legFrom.filter(m=>m.to.row===r&&m.to.col===c&&m.promotion);
+    if(promos.length){ showPromo(promos,(chosen)=>commitMove(chosen)); return; }
+    if(mv){ commitMove(mv); return; }
+    G.sel=null; G.legFrom=[];
+    if(pc && _isPlayer(pc)){ G.sel={row:r,col:c}; G.legFrom=G.allLeg.filter(m=>m.from.row===r&&m.from.col===c); }
+    render(); return;
+  }
+  if(pc && _isPlayer(pc)){ G.sel={row:r,col:c}; G.legFrom=G.allLeg.filter(m=>m.from.row===r&&m.from.col===c); render(); }
+}
+
+// Premove input handler. Two states:
+//   - No preSel yet → click a white piece to start picking targets.
+//   - preSel set    → click a target square to queue, click another own
+//                     piece to switch, click anywhere else to deselect.
+// A right-click anywhere on the board cancels a queued premove (wired below).
+function handlePremoveClick(r, c){
+  const pc = G.board[r][c];
+
+  if (G.preSel){
+    // Click on the same square — deselect.
+    if (G.preSel.row === r && G.preSel.col === c){
+      G.preSel = null; G.preTargets = []; render(); return;
+    }
+    // Click a reachable square — queue the premove.
+    const tgt = G.preTargets.find(t => t.row === r && t.col === c);
+    if (tgt){
+      const piece = G.board[G.preSel.row][G.preSel.col];
+      const pre   = { from: { row:G.preSel.row, col:G.preSel.col },
+                      to:   { row:r, col:c } };
+      // Auto-promote to queen for premoved pawns reaching the back rank —
+      // works for either colour (white pawn → row 0, black pawn → row 7).
+      const isPawn   = piece && piece.toUpperCase() === 'P';
+      const backRank = G.playerColor === 'white' ? 0 : 7;
+      if (isPawn && r === backRank){
+        pre.promotion = G.playerColor === 'white' ? 'Q' : 'q';
+      }
+      G.premove   = pre;
+      G.preSel    = null;
+      G.preTargets= [];
+      render(); return;
+    }
+    // Click another own piece — switch the from-square.
+    if (pc && _isPlayer(pc)){
+      G.preSel    = { row:r, col:c };
+      G.preTargets= _premoveTargets(G.board, r, c);
+      G.premove   = null;
+      render(); return;
+    }
+    // Click anywhere else — clear the in-progress selection.
+    G.preSel = null; G.preTargets = []; render(); return;
+  }
+
+  // No selection yet — clicking your own piece begins one.
+  if (pc && _isPlayer(pc)){
+    G.preSel    = { row:r, col:c };
+    G.preTargets= _premoveTargets(G.board, r, c);
+    G.premove   = null;            // any prior queued premove is replaced
+    render();
+  }
+}
+
+// Discard any pending premove and selection. Called on right-click, Esc,
+// new game, undo, resign, character change, etc.
+function clearPremove(){
+  if (G.premove || G.preSel || (G.preTargets && G.preTargets.length)){
+    G.premove = null;
+    G.preSel  = null;
+    G.preTargets = [];
+    render();
+  }
+}
+
+// Try to play a queued premove now that it's the player's turn. If the move
+// is no longer legal (own piece still on the destination, captured by the
+// bot, etc.) the premove is silently dropped.
+function tryPlayPremove(){
+  if (!G.premove || G.over || G.gs.turn !== G.playerColor) return;
+  const pre = G.premove;
+  G.premove = null;
+  const match = G.allLeg.find(m =>
+       m.from.row === pre.from.row && m.from.col === pre.from.col
+    && m.to.row   === pre.to.row   && m.to.col   === pre.to.col
+    && (pre.promotion ? m.promotion === pre.promotion : !m.promotion));
+  if (match){
+    // Tiny pause so the bot's move is visually registered first.
+    setTimeout(() => commitMove(match), 180);
+  } else {
+    render();   // just clear the premove highlights
+  }
+}
+
+// ─── end-of-game helpers ────────────────────────────────────────────────
+// Checks all draw-by-rule conditions against the current G.
+function checkAutomaticDraw(){
+  // 50-move rule: 100 halfmoves without a pawn move or capture
+  if ((G.gs.halfmove || 0) >= 100) return { type: 'draw50', sub: '50-move rule' };
+  // Insufficient material
+  if (isInsufficient(G.board)) return { type: 'drawMat', sub: 'Insufficient material' };
+  // Threefold repetition
+  const key = posKey(G.board, G.gs);
+  if ((G.positions[key] || 0) >= 3) return { type: 'drawRep', sub: 'Threefold repetition' };
+  return null;
+}
+function endGame(titleText, quoteKey, subText){
+  G.over = true;
+  setTimeout(()=>{
+    document.getElementById('go-title').textContent = titleText;
+    document.getElementById('go-quote').textContent = pick(quoteKey);
+    document.getElementById('go-sub').textContent   = subText;
+    document.getElementById('gameover').classList.add('show');
+  }, 400);
+}
+
+// ─── per-ply snapshot for the move-history scrubber ──────────────────────
+// Append a frozen copy of the current board / gs / last-from-to into
+// G.boardHistory after every ply (player or bot). Index 0 is the starting
+// position; index N is "after N plies".
+function _pushPlySnapshot(){
+  if (!G.boardHistory) G.boardHistory = [];
+  G.boardHistory.push({
+    board: G.board.map(r => [...r]),
+    gs:    JSON.parse(JSON.stringify(G.gs)),
+    lastF: G.lastF, lastT: G.lastT,
+  });
+}
+
+// ─── history navigation ──────────────────────────────────────────────────
+// Set G.viewPly to a non-null index (0..hist.length) to enter review mode;
+// pass null to return to live play. While reviewing, render() reads from
+// G.boardHistory[G.viewPly] instead of G.board, and handleClick early-returns
+// so the board state can't be mutated.
+function navigateHistory(plyIndex){
+  // Bounds-check; null means "back to live"
+  if (plyIndex === null || plyIndex >= (G.boardHistory.length - 1)){
+    if (G.viewPly === null) return;     // already live
+    G.viewPly = null;
+  } else {
+    if (plyIndex < 0) plyIndex = 0;
+    G.viewPly = plyIndex;
+  }
+  // Drop interactive state — selections / premoves don't make sense in review.
+  G.sel = null; G.legFrom = [];
+  G.preSel = null; G.preTargets = [];
+  render();
+}
+
+function commitMove(mv){
+  clearHint();
+  // snapshot for undo
+  G.snapshots.push({
+    board: G.board.map(r=>[...r]),
+    gs:    JSON.parse(JSON.stringify(G.gs)),
+    hist:  [...G.hist],
+    prevEval: G.prevEval,
+    lastF: G.lastF, lastT: G.lastT,
+    positions: {...G.positions},
+    moveNum: G.moveNum,
+  });
+
+  const allLeg = getLegal(G.board, G.gs.turn, G.gs);
+  const san    = _san(G.board, mv, allLeg);
+
+  // Critical-save check uses the pre-move board and PLAYER-perspective eval.
+  const _criticalSave = _isCriticalSave(G.board, G.gs, mv, allLeg, G.prevEval * _pSign());
+
+  // Play SFX based on move type
+  if (mv.captured || mv.enPassant) Audio_.capture();
+  else if (mv.castling)            Audio_.castle();
+  else if (mv.promotion)           Audio_.promote();
+  else                              Audio_.move();
+
+  const prevEvW = G.prevEval;          // raw white-POV
+  G.board = applyMove(G.board, mv);
+  G.gs    = updateGS(G.gs, mv);
+  G.lastF = mv.from; G.lastT = mv.to;
+  G.sel   = null; G.legFrom = [];
+
+  const evW  = evalPos(G.board);        // raw white-POV
+  G.prevEval = evW; G.evalHistory.push(evW);
+  _pushPlySnapshot();                   // record this ply for review-mode
+  const mn   = G.moveNum++;
+  // Player-perspective eval: positive ⇒ player ahead, regardless of colour.
+  const sign     = _pSign();
+  const evP      = evW     * sign;
+  const prevEvP  = prevEvW * sign;
+  const evDelta  = evP - prevEvP;       // already player-perspective
+  const ev       = evW;                 // alias for legacy refs below (white POV)
+
+  // Threefold tracking
+  const key = posKey(G.board, G.gs);
+  G.positions[key] = (G.positions[key] || 0) + 1;
+
+  // ── opening-specific line for the player's first move ──────────────────
+  // Book classifications (1.e4 / 1.d4 / 1.Nf3 / 1.c4) are white-perspective,
+  // so this only fires when the player is white.
+  if (G.hist.length === 0 && G.playerColor === 'white') {
+    const k = _classifyOpening([san]);
+    if (k) sayIfQuiet(pick(k), mn);
+  }
+
+  // ── tactical / situational signals about the player's move ──────────────
+  const playerHang      = _playerHangingAsset(G.board);
+  const playerMajorCap  = !!(mv.captured && (PVAL[mv.captured.toUpperCase()] || 0) >= 5);
+  // A "recovery" — claws back from a losing position toward equality (player-perspective).
+  const playerRecovery  = prevEvP < -150 && evP > prevEvP + 100 && evP < 100;
+
+  // ── dialogue: priority-ordered. One category fires per turn via sayIfQuiet. ──
+  if (mv.castling)                             sayIfQuiet(pick('pCastle'),    mn);
+  else if (mv.promotion)                       sayIfQuiet(pick('pPromote'),   mn);
+  else if (playerHang)                         sayIfQuiet(pick('pHang'),      mn);
+  else if (playerMajorCap && evDelta > -50)    sayIfQuiet(pick('pExcellent'), mn);
+  else if (playerRecovery)                     sayIfQuiet(pick('pRecovery'),  mn);
+  else if (evDelta < -120)                     sayIfQuiet(pick('pBlunder'),   mn);
+  else if (evDelta >  140)                     sayIfQuiet(pick('pExcellent'), mn);
+  else if (evDelta >   90)                     sayIfQuiet(pick('pGood'),      mn);
+
+  // ── Annoyed portrait: reserved for two player-action moments ─────────────
+  //   (1) Player found a critical save from a losing position.
+  //   (2) Player capitalised on Arisu's prior inaccuracy.
+  // Forced-draw case is handled in the end-game flow below.
+  const _exploitedInaccuracy = _arisuWasInaccurate && evDelta > 30;
+  if (_criticalSave || _exploitedInaccuracy) setPortrait('annoyed');
+  _arisuWasInaccurate = false;              // flag consumed (or let fade) this turn
+
+  // Check-related dialogue + sound — bot's king is now in check.
+  if (inCheck(G.board, _botColor())) { sayIfQuiet(pick('pChk'), mn); Audio_.check(); }
+
+  // Phase transition flavour
+  const newPhase = _phase(G.board);
+  if (newPhase !== _lastPhase) {
+    _lastPhase = newPhase;
+    if (newPhase === 'middle') sayIfQuiet(pick('midgame'), mn);
+    else if (newPhase === 'end') sayIfQuiet(pick('endgame'), mn);
+  }
+  // Crushing / winning / losing pools fire from the BOT's perspective.
+  if (Math.abs(evP) > 600)      sayIfQuiet(pick('crushing'), mn);
+  else if (Math.abs(evP) > 380) sayIfQuiet(pick(evP < 0 ? 'winning' : 'losing'), mn);
+
+  G.hist.push(san);
+  updateMaterialDiff();
+  updateEvalBar(evW);              // temporary; SF will overwrite
+  updateEvalPortrait(evW);
+
+  // ── check end conditions after player's move ────────────────────────────
+  const newLeg = getLegal(G.board, _botColor(), G.gs);
+  G.allLeg = newLeg;
+  if (!newLeg.length) {
+    const chk = inCheck(G.board, _botColor());
+    if (chk) { Audio_.win(); endGame('\u2654 You Win!', 'defeat', 'Checkmate'); }
+    else     { Audio_.draw(); endGame('Draw', 'stalemate', 'Stalemate'); }
+    render(); return;
+  }
+  const autoDraw = checkAutomaticDraw();
+  if (autoDraw) {
+    Audio_.draw();
+    // Threefold and 50-move rule are frustrating for Arisu: she wanted to win.
+    if (autoDraw.type === 'drawRep' || autoDraw.type === 'draw50') setPortrait('annoyed', 0);
+    endGame('Draw', autoDraw.type, autoDraw.sub);
+    render(); return;
+  }
+
+  G.thinking = true; render(); stopIdle();
+
+  // ── bot's turn ──────────────────────────────────────────────────────────
+  const depth = parseInt(document.getElementById('diff').value);
+  askWorker(G.board, G.gs, depth, (bm, sfWhiteScore, sfWhiteMate) => {
+    G.thinking = false;
+    if (!bm) {
+      const chk = inCheck(G.board, G.playerColor);
+      if (chk) { Audio_.lose(); endGame('\u265a ' + activeChar().short + ' Wins', 'victory', 'Checkmate'); }
+      else     { Audio_.draw(); endGame('Draw', 'stalemate', 'Stalemate'); }
+      render(); return;
+    }
+    if (sfWhiteScore !== undefined) updateEvalBar(sfWhiteScore, sfWhiteMate);
+
+    const bSan = _san(G.board, bm, getLegal(G.board, _botColor(), G.gs));
+    // Pre-move state, so we can detect whether bot captured a hanging piece
+    const boardBefore = G.board;
+    const hangBefore  = bm.captured
+      ? _isHanging(boardBefore, bm.to.row, bm.to.col)
+      : false;
+
+    const prevEvW2 = G.prevEval;        // raw white-POV before bot move
+
+    // Bot SFX
+    if (bm.enPassant)       { Audio_.capture(); }
+    else if (bm.captured)   { Audio_.capture(); }
+    else if (bm.castling)   { Audio_.castle(); }
+    else if (bm.promotion)  { Audio_.promote(); }
+    else                     Audio_.move();
+
+    G.board = applyMove(G.board, bm);
+    G.gs    = updateGS(G.gs, bm);
+    G.lastF = bm.from; G.lastT = bm.to;
+
+    const evW2     = evalPos(G.board);
+    G.prevEval = evW2; G.evalHistory.push(evW2);
+    _pushPlySnapshot();                  // record bot's ply for review-mode
+    const mn2      = G.moveNum++;
+    const evDeltaP2 = (evW2 - prevEvW2) * sign;     // player perspective
+
+    // Bot threefold tracking
+    const key2 = posKey(G.board, G.gs);
+    G.positions[key2] = (G.positions[key2] || 0) + 1;
+
+    // ── bot dialogue: layered priorities ───────────────────────────────────
+    // aInaccuracy fires when the bot's move HELPS the player (player's eval rises).
+    if (evDeltaP2 > 130) { sayIfQuiet(pick('aInaccuracy'), mn2); _arisuWasInaccurate = true; }
+    else                 { _arisuWasInaccurate = false; }
+
+    // Did this move create a fork?
+    if (_createsFork(G.board, bm.to.row, bm.to.col)) {
+      sayIfQuiet(pick('botFork'), mn2);
+    }
+    // Opening-reply flavour fires only when the player is white and the bot
+    // is replying to white's first move (so the SAN sequence reads e.g. ['e4','c5']).
+    else if (G.playerColor === 'white' && G.hist.length === 1) {
+      const k = _classifyOpening([G.hist[0], bSan]);
+      if (k && k.startsWith('op_reply')) sayIfQuiet(pick(k), mn2);
+    }
+    else if (bm.castling)          sayIfQuiet(pick('botCastle'), mn2);
+    else if (bm.promotion)         sayIfQuiet(pick('botPromote'), mn2);
+    else if (bm.enPassant)         sayIfQuiet(pick('botEP'), mn2);
+    else if (hangBefore)           sayIfQuiet(pick('botCapHanging'), mn2);
+    else if (bm.captured && ['Q','R'].includes(bm.captured.toUpperCase()))
+                                   sayIfQuiet(pick('botCapMajor'), mn2);
+    else if (bm.captured)          sayIfQuiet(pick('botCap'), mn2);
+
+    if (inCheck(G.board, G.playerColor)) { sayIfQuiet(pick('botChk'), mn2); Audio_.check(); }
+
+    updateMaterialDiff();
+
+    // ── post-bot end conditions ────────────────────────────────────────────
+    const wLeg = getLegal(G.board, G.playerColor, G.gs);
+    G.allLeg = wLeg;
+    if (!wLeg.length) {
+      const chk = inCheck(G.board, G.playerColor);
+      if (chk) { Audio_.lose(); endGame('\u265a ' + activeChar().short + ' Wins', 'victory', 'Checkmate'); }
+      else     { Audio_.draw(); endGame('Draw', 'stalemate', 'Stalemate'); }
+      G.hist.push(bSan); updateEvalBar(evW2); render(); return;
+    }
+    const autoDraw2 = checkAutomaticDraw();
+    if (autoDraw2) {
+      Audio_.draw();
+      if (autoDraw2.type === 'drawRep' || autoDraw2.type === 'draw50') setPortrait('annoyed', 0);
+      endGame('Draw', autoDraw2.type, autoDraw2.sub);
+      G.hist.push(bSan); render(); return;
+    }
+
+    G.hist.push(bSan);
+    render();
+
+    // Quick SF eval of the new position so the bar reflects post-bot-move reality
+    if (sf && sfReady) {
+      sfEval(boardToFen(G.board, G.gs), G.playerColor,
+             (whiteAdv, whiteMate) => {
+               updateEvalBar(whiteAdv, whiteMate);
+               updateEvalPortrait(whiteAdv);
+             });
+    } else {
+      updateEvalBar(evW2);
+      updateEvalPortrait(evW2);
+    }
+    startIdle(mn2);
+
+    // If the player queued a premove during the bot's think, try to play it now.
+    tryPlayPremove();
+  });
+}
+
+// \u2500\u2500\u2500 botFirstMove \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// When the player chose black, the bot opens. Slimmed-down version of the bot
+// half of commitMove \u2014 it makes one move, lands a flavour line, hands turn
+// back to the player.
+function botFirstMove(){
+  if (G.over || G.thinking || G.gs.turn === G.playerColor) return;
+  G.thinking = true; render(); stopIdle();
+  const depth = parseInt(document.getElementById('diff').value);
+  askWorker(G.board, G.gs, depth, (bm, wScore, wMate) => {
+    G.thinking = false;
+    if (!bm) { render(); return; }   // shouldn't happen on the opening
+    if (bm.captured)        Audio_.capture();
+    else if (bm.castling)   Audio_.castle();
+    else                    Audio_.move();
+
+    const bSan = _san(G.board, bm, getLegal(G.board, G.gs.turn, G.gs));
+    G.board = applyMove(G.board, bm);
+    G.gs    = updateGS(G.gs, bm);
+    G.lastF = bm.from; G.lastT = bm.to;
+    const evW2 = evalPos(G.board);
+    G.prevEval = evW2; G.evalHistory.push(evW2);
+    _pushPlySnapshot();                  // record bot's first ply
+    G.moveNum++;
+    const k2 = posKey(G.board, G.gs);
+    G.positions[k2] = (G.positions[k2] || 0) + 1;
+    G.hist.push(bSan);
+
+    // No opening-classification line here. The op_e4 / op_d4 / op_Nf3 / op_c4
+    // pools are written as the bot REACTING to the opponent's choice ("The
+    // King's Pawn. Classical, direct — I approve."), so they don't fit when
+    // the bot is the one making the move. We stay silent on opening flavour
+    // when the bot opens; the regular game-start opening line (Arisu/Horikita/
+    // Ayanokouji greeting) carries that beat instead.
+    if (inCheck(G.board, G.playerColor)) { sayIfQuiet(pick('botChk'), G.moveNum); Audio_.check(); }
+
+    G.allLeg = getLegal(G.board, G.playerColor, G.gs);
+    updateMaterialDiff();
+    if (wScore !== undefined) updateEvalBar(wScore, wMate);
+    else                       updateEvalBar(evW2);
+    updateEvalPortrait(wScore !== undefined ? wScore : evW2);
+    render();
+    startIdle(G.moveNum);
+    tryPlayPremove();
+  });
+}
+
+document.getElementById('new-btn').addEventListener('click',()=>initGame(false));
+document.getElementById('go-new').addEventListener('click',()=>initGame(false));
+
+// Swap character card + portraits on opponent change (no restart required).
+document.getElementById('diff').addEventListener('change', ()=>{
+  applyCharacter();
+  updateEvalPortrait(G.prevEval || 0);
+  // Cancel any pending premove — choosing a different opponent is a fresh start.
+  clearPremove();
+  G.arrows = []; render();
+  // If no moves have been made yet, refresh the dialogue box so the newly
+  // selected opponent introduces themselves with one of *their* opening lines.
+  // Mid-game we leave the existing line in place — switching opponents during
+  // play shouldn't yank you out of the current beat.
+  if (G.hist.length === 0 && !G.over){
+    _recentLines.length = 0;     // fresh recency pool for the new character
+    _lastDlgMove = -5;           // ensure subsequent sayIfQuiet calls fire
+    say(pick('opening'));
+  }
+});
+document.getElementById('resign-btn').addEventListener('click',()=>{
+  if (G.viewPly != null) navigateHistory(null);    // exit review first
+  if(G.over||G.thinking) return;
+  say(pick('resign'));
+  G.over=true; _prevGameResigned=true;
+  G.premove = null; G.preSel = null; G.preTargets = [];
+  Audio_.lose();
+  render();
+  setTimeout(()=>{
+    document.getElementById('go-title').textContent='\u265a ' + activeChar().short + ' Wins';
+    document.getElementById('go-quote').textContent=pick('victory');
+    document.getElementById('go-sub').textContent='You resigned';
+    document.getElementById('gameover').classList.add('show');
+  },1400);
+});
+
+// ─── hint: ask Stockfish for a good move for the side the player controls ───
+document.getElementById('hint-btn').addEventListener('click', ()=>{
+  if (G.over || G.thinking || G.gs.turn !== G.playerColor) return;
+  if (sf && sfReady) {
+    // Temporary full-strength search for a suggestion
+    const fen = boardToFen(G.board, G.gs);
+    let hintMate = null;
+    sfCurrentSearch = line => {
+      const mateM = line.match(/\bscore mate (-?\d+)/);
+      if (mateM) hintMate = parseInt(mateM[1]);
+      if (line.startsWith('bestmove')) {
+        sfCurrentSearch = null;
+        const sfMv = line.split(' ')[1];
+        if (!sfMv || sfMv === '(none)') return;
+        const mv = sfMoveToInternal(sfMv, G.board);
+        if (!mv) return;
+        _hint = { from: mv.from, to: mv.to };
+        render();
+        setTimeout(clearHint, 3500);
+        setTimeout(render, 3520);
+      }
+    };
+    sf.postMessage('stop');
+    // Hints are always full-strength regardless of selected opponent.
+    sf.postMessage('setoption name UCI_LimitStrength value false');
+    sf.postMessage('setoption name Skill Level value 20');
+    sf.postMessage('position fen ' + fen);
+    sf.postMessage('go movetime 300');
+  } else {
+    // Fallback: built-in engine suggestion for the player's colour. evalPos
+    // returns white-POV; multiply by _pSign() so we can always "maximize".
+    const moves = getLegal(G.board, G.playerColor, G.gs);
+    if (!moves.length) return;
+    const sign = _pSign();
+    let best = null, bv = -Infinity;
+    for (const m of moves) {
+      const v = evalPos(applyMove(G.board, m)) * sign;
+      if (v > bv) { bv = v; best = m; }
+    }
+    if (best) {
+      _hint = { from: best.from, to: best.to };
+      render();
+      setTimeout(clearHint, 3500);
+      setTimeout(render, 3520);
+    }
+  }
+});
+
+// ─── undo: revert the last player+bot move pair ───────────────────────────
+document.getElementById('undo-btn').addEventListener('click', ()=>{
+  if (G.viewPly != null) navigateHistory(null);    // exit review first
+  if (G.over || G.thinking) return;
+  // Each commitMove pushes one snapshot (the state just before the player moved).
+  // Undoing means restoring the state that was saved *before* the player's last move.
+  // But commitMove already played both the player's move and (asynchronously) the bot's.
+  // To roll back a full ply-pair, take the most recent snapshot.
+  if (!G.snapshots.length) return;
+  const s = G.snapshots.pop();
+  G.board     = s.board;
+  G.gs        = s.gs;
+  G.hist      = s.hist;
+  G.prevEval  = s.prevEval;
+  G.lastF     = s.lastF;
+  G.lastT     = s.lastT;
+  G.positions = s.positions;
+  G.moveNum   = s.moveNum;
+  G.sel       = null; G.legFrom = [];
+  G.preSel    = null; G.preTargets = []; G.premove = null;
+  G.arrows    = [];
+  // Trim per-ply snapshots back to match — boardHistory length = hist.length + 1.
+  if (G.boardHistory && G.boardHistory.length > G.hist.length + 1){
+    G.boardHistory.length = G.hist.length + 1;
+  }
+  G.allLeg    = getLegal(G.board, G.playerColor, G.gs);
+  Audio_.move();
+  render();
+  updateMaterialDiff();
+  // Refresh the eval bar
+  if (sf && sfReady) {
+    sfEval(boardToFen(G.board, G.gs), G.playerColor,
+           (whiteAdv, whiteMate) => {
+             updateEvalBar(whiteAdv, whiteMate);
+             updateEvalPortrait(whiteAdv);
+           });
+  } else {
+    const ev = evalPos(G.board);
+    updateEvalBar(ev);
+    updateEvalPortrait(ev);
+  }
+});
+
+// ─── flip: swap board orientation, and swap sides if move 1 hasn't happened ───
+//
+// Pre-game: pressing Flip switches which colour the player controls. The bot
+//   takes the empty side and opens if the new playerColor is black.
+// Mid-game / after game-over: Flip is a pure visual mirror as before — your
+//   pieces just swap to the top half of the screen.
+//
+// In both cases the eval bar's text needs a refresh so its sign matches the
+// new orientation; updateEvalBar handles the sign flip via G.flipped.
+document.getElementById('flip-btn').addEventListener('click', ()=>{
+  if (G.hist.length === 0 && !G.over){
+    G.playerColor = G.playerColor === 'white' ? 'black' : 'white';
+    G.flipped     = G.playerColor === 'black';
+    G.allLeg      = getLegal(G.board, G.playerColor, G.gs);
+    G.preSel = null; G.preTargets = []; G.premove = null;
+    G.arrows = [];
+    _recentLines.length = 0;
+    _lastDlgMove = -5;
+    render();
+    updateEvalBar(G.prevEval || 0, G.lastMate || null);
+    say(pick('opening'));
+    if (G.gs.turn !== G.playerColor){
+      setTimeout(() => botFirstMove(), 800);
+    }
+  } else {
+    G.flipped = !G.flipped;
+    render();
+    updateEvalBar(G.prevEval || 0, G.lastMate || null);
+  }
+});
+
+// ─── sound toggle ─────────────────────────────────────────────────────────
+document.getElementById('snd-btn').addEventListener('click', ()=>{
+  Audio_.enabled = !Audio_.enabled;
+  const btn = document.getElementById('snd-btn');
+  btn.classList.toggle('off', !Audio_.enabled);
+  btn.innerHTML = Audio_.enabled ? '&#128266;' : '&#128263;';
+  if (Audio_.enabled) Audio_.move(); // little confirmation tick
+});
+
+// ─── PGN export ──────────────────────────────────────────────────────────
+// Builds a standard PGN string from the active game and copies it to the
+// clipboard. Tags are minimal but valid: Event/Site/Date/White/Black/Result.
+// The body uses the SAN moves already in G.hist with one-based move numbers
+// and a result token at the end ('*' if the game's still in progress).
+function _gameResult(){
+  if (!G.over) return '*';
+  const title = (document.getElementById('go-title').textContent || '').trim();
+  // 'You Win!' / '<Char> Wins' / 'Draw' — map to PGN result tokens.
+  if (title.indexOf('You Win') !== -1) return G.playerColor === 'white' ? '1-0' : '0-1';
+  if (title.indexOf('Wins')    !== -1) return G.playerColor === 'white' ? '0-1' : '1-0';
+  if (title.indexOf('Draw')    !== -1) return '1/2-1/2';
+  return '*';
+}
+function _todayPGNDate(){
+  const d = new Date();
+  const pad = n => String(n).padStart(2,'0');
+  return `${d.getFullYear()}.${pad(d.getMonth()+1)}.${pad(d.getDate())}`;
+}
+function generatePGN(){
+  const ch        = activeChar();
+  const playerNm  = 'Player';
+  const whiteName = G.playerColor === 'white' ? playerNm : ch.name;
+  const blackName = G.playerColor === 'white' ? ch.name  : playerNm;
+  const result    = _gameResult();
+  const tags = [
+    `[Event "Casual Game"]`,
+    `[Site "Arisu Chess"]`,
+    `[Date "${_todayPGNDate()}"]`,
+    `[White "${whiteName}"]`,
+    `[Black "${blackName}"]`,
+    `[Result "${result}"]`,
+  ];
+  // Move text: "1. e4 c5 2. Nf3 d6 ..."  Wraps at ~80 chars per PGN convention.
+  const tokens = [];
+  for (let i = 0; i < G.hist.length; i += 2){
+    tokens.push((i/2 + 1) + '.');
+    tokens.push(G.hist[i]);
+    if (i + 1 < G.hist.length) tokens.push(G.hist[i+1]);
+  }
+  tokens.push(result);
+  let body = '', line = '';
+  for (const t of tokens){
+    if (line.length + t.length + 1 > 80){ body += line.trimEnd() + '\n'; line = ''; }
+    line += t + ' ';
+  }
+  body += line.trimEnd();
+  return tags.join('\n') + '\n\n' + body + '\n';
+}
+async function copyPGN(){
+  const pgn = generatePGN();
+  try {
+    await navigator.clipboard.writeText(pgn);
+    return true;
+  } catch (e) {
+    // Fallback for older browsers / non-secure contexts.
+    const ta = document.createElement('textarea');
+    ta.value = pgn;
+    ta.style.position = 'fixed'; ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(_){}
+    ta.remove();
+    return ok;
+  }
+}
+document.getElementById('pgn-btn').addEventListener('click', async ()=>{
+  const btn = document.getElementById('pgn-btn');
+  const ok  = await copyPGN();
+  const orig = btn.textContent;
+  btn.textContent = ok ? 'Copied' : 'Failed';
+  setTimeout(() => { btn.textContent = orig; }, 1500);
+});
+
+// Initialize the AudioContext on first user gesture (browser autoplay policy).
+// Any click on the page unlocks it.
+document.addEventListener('click', function unlockAudio(){
+  if (!Audio_.ctx) Audio_.init();
+  if (Audio_.ctx && Audio_.ctx.state === 'suspended') Audio_.ctx.resume();
+  document.removeEventListener('click', unlockAudio);
+}, { once:true });
+
+// ─── keyboard shortcuts ───────────────────────────────────────────────────
+document.addEventListener('keydown', (e)=>{
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT')) return;
+  const k = e.key.toLowerCase();
+  if (k === 'n') { e.preventDefault(); initGame(false); }
+  else if (k === 'u') { e.preventDefault(); document.getElementById('undo-btn').click(); }
+  else if (k === 'h') { e.preventDefault(); document.getElementById('hint-btn').click(); }
+  else if (k === 'f') { e.preventDefault(); document.getElementById('flip-btn').click(); }
+  else if (k === 'm') { e.preventDefault(); document.getElementById('snd-btn').click(); }
+  // ── history navigation ──
+  else if (e.key === 'End')   { e.preventDefault(); navigateHistory(null); }
+  else if (e.key === 'Home')  { e.preventDefault(); navigateHistory(0); }
+  else if (e.key === 'ArrowLeft') {
+    e.preventDefault();
+    const cur = (G.viewPly != null) ? G.viewPly : G.boardHistory.length - 1;
+    if (cur > 0) navigateHistory(cur - 1);
+  }
+  else if (e.key === 'ArrowRight') {
+    e.preventDefault();
+    const cur = (G.viewPly != null) ? G.viewPly : G.boardHistory.length - 1;
+    const last = G.boardHistory.length - 1;
+    if (cur < last) navigateHistory(cur + 1 >= last ? null : cur + 1);
+  }
+  else if (k === 'escape') {
+    if (G.viewPly != null){ navigateHistory(null); return; }
+    G.sel = null; G.legFrom = [];
+    G.preSel = null; G.preTargets = []; G.premove = null;
+    G.arrows = [];
+    render();
+  }
+});
+
+setupArrowHandlers();
+setupDragHandlers();
+initGame();
+loadStockfish(); // loads asynchronously; minimax is used as fallback until ready
+</script>
+<!-- Bundled Stockfish worker — populated by build_chess.py if stockfish.js is present -->
+<script id="sf-code" type="text/sf-worker">%%STOCKFISH_JS%%</script>
+</body>
+</html>
