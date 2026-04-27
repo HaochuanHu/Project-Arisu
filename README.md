@@ -1,0 +1,1 @@
+This is a chess engine. You can choose from 3 difficulties: Horikita (1200 FDE), Sakayanagi (2000~FDE), or Ayanokouji (2200+FDE). The difficulties are named after characters from Classroom of the Elite. All code written by Claude. 
